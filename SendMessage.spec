@@ -1,28 +1,21 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_all
+
+datas_sel, bins_sel, hidden_sel = collect_all('selenium')
+datas_wdm, bins_wdm, hidden_wdm = collect_all('webdriver_manager')
 
 a = Analysis(
     ['SendMessage.py'],
     pathex=[],
-    binaries=[],
-    datas=[],
-    hiddenimports=[
-        'webdriver_manager',
-        'webdriver_manager.chrome',
-        'webdriver_manager.core',
-        'webdriver_manager.core.driver_cache',
-        'webdriver_manager.core.http',
-        'webdriver_manager.core.manager',
-        'selenium',
-        'selenium.webdriver',
-        'selenium.webdriver.chrome',
-        'selenium.webdriver.chrome.service',
-        'selenium.webdriver.chrome.options',
-        'selenium.webdriver.support',
-        'selenium.webdriver.support.ui',
-        'selenium.webdriver.support.expected_conditions',
-        'selenium.webdriver.common.by',
-        'selenium.webdriver.common.keys',
+    binaries=bins_sel + bins_wdm,
+    datas=datas_sel + datas_wdm,
+    hiddenimports=hidden_sel + hidden_wdm + [
         'pkg_resources',
+        'urllib3',
+        'certifi',
+        'charset_normalizer',
+        'idna',
+        'requests',
     ],
     hookspath=[],
     hooksconfig={},
@@ -47,7 +40,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,          # ללא חלון שורת פקודה שחורה
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
