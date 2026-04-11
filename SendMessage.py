@@ -207,13 +207,15 @@ class WhatsAppApp:
             widget.mark_set(tk.INSERT, "end-1c")
             return "break"
 
-        for seq in (f"<{_MOD}-v>", f"<{_MOD}-V>"):
+        # Bind every possible variant — Control (Windows/Linux) + Command (Mac)
+        # + tkinter virtual events (most reliable cross-platform)
+        for seq in ("<Control-v>", "<Control-V>", "<Command-v>", "<Command-V>", "<<Paste>>"):
             widget.bind(seq, _paste)
-        for seq in (f"<{_MOD}-c>", f"<{_MOD}-C>"):
+        for seq in ("<Control-c>", "<Control-C>", "<Command-c>", "<Command-C>", "<<Copy>>"):
             widget.bind(seq, _copy)
-        for seq in (f"<{_MOD}-x>", f"<{_MOD}-X>"):
+        for seq in ("<Control-x>", "<Control-X>", "<Command-x>", "<Command-X>", "<<Cut>>"):
             widget.bind(seq, _cut)
-        for seq in (f"<{_MOD}-a>", f"<{_MOD}-A>"):
+        for seq in ("<Control-a>", "<Control-A>", "<Command-a>", "<Command-A>"):
             widget.bind(seq, _select_all)
 
     # ── UI component helpers ──────────────────────────────────────────────────
