@@ -40,23 +40,23 @@ SEND_TIMEOUT = 25
 _KC_V, _KC_C, _KC_X, _KC_A = 86, 67, 88, 65
 
 # ── Design Tokens ─────────────────────────────────────────────────────────────
-BG      = "#f5fbf4"
-CARD    = "#f0f5ef"   # surface-container-low
-CARD_W  = "#ffffff"   # surface-container-lowest
-FIELD   = "#ffffff"
+BG      = "#e4ebe4"   # darker page bg — cards stand out clearly
+CARD    = "#ffffff"   # pure white cards
+CARD_W  = "#ffffff"
+FIELD   = "#f4f8f5"   # very light input area
 ACCENT  = "#006b47"
-A_DARK  = "#005235"
-A_LIGHT = "#e6f4ed"
+A_DARK  = "#004d34"
+A_LIGHT = "#d6efe3"
 DANGER  = "#ba1a1a"
 D_DARK  = "#93000a"
 D_LIGHT = "#ffdad6"
 TEXT    = "#171d19"
-MUTED   = "#3e4942"
-BORDER  = "#dee4de"
-LOG_BG  = "#171d19"
-LOG_OK  = "#71dba6"
-LOG_ERR = "#ffb3af"
-LOG_WRN = "#ffd180"
+MUTED   = "#4a6355"
+BORDER  = "#c8d8cc"
+LOG_BG  = "#111f18"
+LOG_OK  = "#4ade80"
+LOG_ERR = "#ff8a80"
+LOG_WRN = "#ffd54f"
 FONT    = "Segoe UI"
 
 
@@ -251,7 +251,7 @@ class WhatsAppApp:
     # ── Card frame ────────────────────────────────────────────────────────────
 
     def _card(self, parent, card_padx=20, card_pady=18, **grid_kw):
-        shadow = tk.Frame(parent, bg="#c4d1c7")
+        shadow = tk.Frame(parent, bg="#9ab0a0")
         shadow.grid(**grid_kw)
         shadow.rowconfigure(0, weight=1)
         shadow.columnconfigure(0, weight=1)
@@ -416,10 +416,11 @@ class WhatsAppApp:
             "שלום,\nרצינו לעדכן שהשיעור היום בוטל.\nעמכם הסליחה ותודה על ההבנה.", "rtl")
 
         # Template pills bar
-        tbar = tk.Frame(mc, bg="#e8ede8", pady=10, padx=10)
+        tbar = tk.Frame(mc, bg="#dce8de", pady=10, padx=12)
         tbar.pack(fill="x")
-        tk.Label(tbar, text="תבניות:", font=(FONT, 8, "bold"),
-                 bg="#e8ede8", fg=MUTED).pack(side="right", padx=(0, 6))
+        tk.Label(tbar, text="תבניות מהירות ←",
+                 font=(FONT, 8, "bold"), bg="#dce8de", fg=MUTED
+                 ).pack(side="right", padx=(0, 8))
         for label, cmd in [
             ("📅 ביטול שיעור", self._tpl_cancel),
             ("🕒 דחייה",       self._tpl_delay),
@@ -427,33 +428,48 @@ class WhatsAppApp:
             ("📢 מבצע",        self._tpl_promo),
             ("🗑 נקה",         self.clear_message),
         ]:
-            self._btn(tbar, label, cmd, CARD_W, MUTED, BORDER,
-                      font=(FONT, 9), padx=12, pady=5,
+            self._btn(tbar, label, cmd, CARD, MUTED, A_LIGHT,
+                      font=(FONT, 9, "bold"), padx=12, pady=5,
                       highlightbackground=BORDER, highlightthickness=1
                       ).pack(side="right", padx=3)
 
         # ── Actions row ───────────────────────────────────────────────────────
         act = tk.Frame(parent, bg=BG)
         act.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        act.columnconfigure(0, weight=1)   # CTA stretches
+
+        # Row 1: big CTA button full width
+        cta_row = tk.Frame(act, bg=BG)
+        cta_row.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        cta_row.columnconfigure(0, weight=1)
 
         self.start_button = self._btn(
-            act, "🚀  התחל שליחה עכשיו", self._start_thread,
+            cta_row, "🚀   התחל שליחה עכשיו", self._start_thread,
             ACCENT, "white", A_DARK,
-            font=(FONT, 13, "bold"), pady=14, padx=40)
-        self.start_button.pack(side="left")
+            font=(FONT, 14, "bold"), pady=15)
+        self.start_button.grid(row=0, column=0, sticky="ew")
 
         self.stop_button = self._btn(
-            act, "⛔  עצור", self._stop_sending,
+            cta_row, "⛔   עצור שליחה", self._stop_sending,
             DANGER, "white", D_DARK,
-            font=(FONT, 13, "bold"), pady=14, padx=40)
+            font=(FONT, 14, "bold"), pady=15)
+        # hidden until sending
 
-        side = tk.Frame(act, bg=BG)
-        side.pack(side="right")
-        for lbl, cmd in [("📱 חיבור ראשוני", self._first_login),
-                         ("✓ בדיקת תקינות",  self.validate_inputs)]:
-            self._btn(side, lbl, cmd, CARD, MUTED, A_LIGHT,
+        # Row 2: smaller utility buttons
+        util_row = tk.Frame(act, bg=BG)
+        util_row.grid(row=1, column=0, sticky="ew")
+        util_row.columnconfigure(0, weight=1)
+        util_row.columnconfigure(1, weight=1)
+
+        for col, (lbl, cmd) in enumerate([
+            ("✓  בדיקת תקינות",  self.validate_inputs),
+            ("📱  חיבור ראשוני", self._first_login),
+        ]):
+            self._btn(util_row, lbl, cmd, CARD, ACCENT, A_LIGHT,
+                      font=(FONT, 10), pady=10,
                       highlightbackground=BORDER, highlightthickness=1
-                      ).pack(side="right", padx=4)
+                      ).grid(row=0, column=col, sticky="ew",
+                             padx=(0, 6) if col == 0 else (6, 0))
 
         # ── Progress ──────────────────────────────────────────────────────────
         prog = tk.Frame(parent, bg=BG)
@@ -652,8 +668,8 @@ class WhatsAppApp:
 
         self._stop_event.clear()
         self._is_sending = True
-        self.start_button.pack_forget()
-        self.stop_button.pack(side="left")
+        self.start_button.grid_remove()
+        self.stop_button.grid(row=0, column=0, sticky="ew")
         threading.Thread(target=self._send_all, args=(driver,), daemon=True).start()
 
     def _stop_sending(self):
@@ -662,8 +678,8 @@ class WhatsAppApp:
 
     def _restore_ui_after_send(self):
         self._is_sending = False
-        self.stop_button.pack_forget()
-        self.start_button.pack(side="left")
+        self.stop_button.grid_remove()
+        self.start_button.grid(row=0, column=0, sticky="ew")
         self._progress_var.set(0)
         self._progress_label.config(text="")
         self._progress_bar.config(maximum=1)
