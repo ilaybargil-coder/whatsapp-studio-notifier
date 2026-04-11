@@ -195,13 +195,13 @@ class WhatsAppApp:
         b.bind("<Leave>", lambda e: b.config(bg=bg))
         return b
 
-    def _card(self, parent, padx=20, pady=18, **grid_kw):
+    def _card(self, parent, card_padx=20, card_pady=18, **grid_kw):
         """White card with a subtle bottom-right drop shadow."""
         shadow = tk.Frame(parent, bg=CARD_SH)
         shadow.grid(**grid_kw)
         shadow.rowconfigure(0, weight=1)
         shadow.columnconfigure(0, weight=1)
-        inner = tk.Frame(shadow, bg=CARD, padx=padx, pady=pady)
+        inner = tk.Frame(shadow, bg=CARD, padx=card_padx, pady=card_pady)
         inner.grid(row=0, column=0, sticky="nsew", padx=(0, 2), pady=(0, 2))
         return inner
 
