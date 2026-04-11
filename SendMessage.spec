@@ -12,6 +12,7 @@ a = Analysis(
     datas=datas_sel + datas_wdm + datas_pil + [
         ('logo.png', '.'),       # original full logo
         ('logo_icon.png', '.'),  # pre-cropped square icon
+        ('logo_icon.ico', '.'),  # windows icon
     ],
     hiddenimports=hidden_sel + hidden_wdm + hidden_pil + [
         'pkg_resources',
@@ -52,5 +53,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='logo.png',   # taskbar / exe icon on Windows
+    icon='logo_icon.ico',  # embedded icon in the .exe file
 )
