@@ -30,22 +30,28 @@ else:
 MIN_DELAY    = 1.5
 SEND_TIMEOUT = 25
 
-# ── Design Tokens (from HTML design) ─────────────────────────────────────────
-BG       = "#f5fbf4"   # surface background
-CARD     = "#f0f5ef"   # card / section bg
-FIELD    = "#ffffff"   # input field bg
+# ── Design Tokens ─────────────────────────────────────────────────────────────
+BG       = "#f0f4f1"   # app background
+HDR_BG   = "#006b47"   # top header band
+HDR_DK   = "#004d34"   # header bottom shadow strip
+CARD     = "#ffffff"   # card surface
+CARD_SH  = "#c4d1c7"   # card drop-shadow colour
+FIELD    = "#f4f8f5"   # textarea / input bg
 ACCENT   = "#006b47"   # primary green
-A_DARK   = "#005235"   # hover green
-DANGER   = "#ba1a1a"   # error red
-D_DARK   = "#93000a"   # hover red
-TEXT     = "#171d19"   # main text
-MUTED    = "#3e4942"   # secondary text
-BORDER   = "#dee4de"   # dividers
-TBAR     = "#e4eae3"   # template bar bg
-LOG_BG   = "#171d19"   # terminal bg
-LOG_OK   = "#71dba6"   # terminal green
-LOG_ERR  = "#ffb3af"   # terminal red
-LOG_WARN = "#ffd180"   # terminal yellow
+A_DARK   = "#004d34"   # hover green
+A_LIGHT  = "#e6f2ec"   # tint green
+DANGER   = "#c0392b"   # red
+D_DARK   = "#922b21"   # hover red
+D_LIGHT  = "#fdecea"   # tint red
+TEXT     = "#1a2921"   # main text
+MUTED    = "#5f7a6e"   # secondary text
+BORDER   = "#dae3db"   # borders / dividers
+TBAR     = "#eef4ef"   # template bar bg
+SEP      = "#d0dbd1"   # separator
+LOG_BG   = "#0d1f17"   # terminal background
+LOG_OK   = "#4ade80"   # terminal green
+LOG_ERR  = "#ff8a80"   # terminal red
+LOG_WARN = "#ffd54f"   # terminal yellow
 FONT     = "Segoe UI"
 
 
@@ -79,8 +85,8 @@ class WhatsAppApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title(APP_TITLE)
-        self.root.geometry("1080x700")
-        self.root.minsize(900, 620)
+        self.root.geometry("1120x720")
+        self.root.minsize(920, 640)
         self.root.configure(bg=BG)
 
         self._is_sending    = False
@@ -91,30 +97,71 @@ class WhatsAppApp:
         self.manual_confirm_var = tk.BooleanVar(value=False)
         self._progress_var      = tk.IntVar(value=0)
 
+        self._set_app_icon()
         self._build_ui()
 
-    # ── Clipboard Helpers ─────────────────────────────────────────────────────
+    # ── Icon ──────────────────────────────────────────────────────────────────
 
-    def _bind_clipboard(self, widget: tk.Text):
-        """Explicitly bind Ctrl/Cmd shortcuts so paste works on all platforms."""
+    def _set_app_icon(self):
+        """Create a simple green-circle icon and set it as the window icon."""
+        try:
+            size = 64
+            img  = tk.PhotoImage(width=size, height=size)
+            cx = cy = size // 2
+            r  = cx - 2
+            # green circle
+            for y in range(size):
+                row_colors = []
+                for x in range(size):
+                    dist = ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5
+                    if dist <= r:
+                        row_colors.append(ACCENT)
+                    else:
+                        row_colors.append(BG)
+                img.put("{" + " ".join(row_colors) + "}", to=(0, y))
+            self.root.iconphoto(True, img)
+        except Exception:
+            pass  # not critical
+
+    # ── Clipboard + RTL helpers ───────────────────────────────────────────────
+
+    def _bind_text_widget(self, widget: tk.Text):
+        """Bind RTL display fix + full clipboard shortcuts to a Text widget."""
+
+        # ── RTL fix: apply tag immediately after each keystroke ──────────────
+        def _fix_rtl(e=None):
+            widget.tag_add("rtl", "1.0", "end")
+
+        widget.bind("<Key>",           lambda e: widget.after(1, _fix_rtl))
+        widget.bind("<<Modified>>",    lambda e: _fix_rtl())
+        widget.bind("<ButtonRelease>", lambda e: _fix_rtl())
+
+        # ── Clipboard shortcuts ───────────────────────────────────────────────
         def _paste(e):
             try:
-                widget.insert(tk.INSERT, widget.clipboard_get())
+                text = widget.clipboard_get()
+            except tk.TclError:
+                return "break"
+            try:                                   # delete selection first
+                widget.delete(tk.SEL_FIRST, tk.SEL_LAST)
             except tk.TclError:
                 pass
+            widget.insert(tk.INSERT, text)
+            widget.after(1, _fix_rtl)
             return "break"
 
         def _copy(e):
             try:
                 widget.clipboard_clear()
-                widget.clipboard_append(widget.selection_get())
+                widget.clipboard_append(widget.get(tk.SEL_FIRST, tk.SEL_LAST))
             except tk.TclError:
                 pass
             return "break"
 
         def _cut(e):
-            _copy(e)
             try:
+                widget.clipboard_clear()
+                widget.clipboard_append(widget.get(tk.SEL_FIRST, tk.SEL_LAST))
                 widget.delete(tk.SEL_FIRST, tk.SEL_LAST)
             except tk.TclError:
                 pass
@@ -125,21 +172,21 @@ class WhatsAppApp:
             widget.mark_set(tk.INSERT, "end-1c")
             return "break"
 
-        for key in ("<Control-v>", "<Control-V>"):
-            widget.bind(key, _paste)
-        for key in ("<Control-c>", "<Control-C>"):
-            widget.bind(key, _copy)
-        for key in ("<Control-x>", "<Control-X>"):
-            widget.bind(key, _cut)
-        for key in ("<Control-a>", "<Control-A>"):
-            widget.bind(key, _select_all)
+        for seq in ("<Control-v>", "<Control-V>"):
+            widget.bind(seq, _paste)
+        for seq in ("<Control-c>", "<Control-C>"):
+            widget.bind(seq, _copy)
+        for seq in ("<Control-x>", "<Control-X>"):
+            widget.bind(seq, _cut)
+        for seq in ("<Control-a>", "<Control-A>"):
+            widget.bind(seq, _select_all)
 
-    # ── UI Helpers ────────────────────────────────────────────────────────────
+    # ── UI component helpers ──────────────────────────────────────────────────
 
     def _btn(self, parent, text, command, bg, fg, hover, **kw):
         props = dict(font=(FONT, 10, "bold"), relief="flat", bd=0,
-                     cursor="hand2", padx=20, pady=8,
-                     highlightthickness=0, highlightbackground=bg)
+                     cursor="hand2", padx=22, pady=9,
+                     highlightthickness=0)
         props.update(kw)
         b = tk.Button(parent, text=text, command=command,
                       bg=bg, fg=fg, activebackground=hover, activeforeground=fg,
@@ -148,49 +195,83 @@ class WhatsAppApp:
         b.bind("<Leave>", lambda e: b.config(bg=bg))
         return b
 
-    def _section_title(self, parent, icon, title, bg=CARD):
-        row = tk.Frame(parent, bg=bg)
-        row.pack(fill="x", pady=(0, 14))
-        tk.Label(row, text=icon, font=(FONT, 14), bg=bg, fg=ACCENT).pack(side="right", padx=(8, 0))
-        tk.Label(row, text=title, font=(FONT, 10, "bold"), bg=bg, fg=TEXT).pack(side="right")
-        tk.Frame(row, bg=BORDER, height=1).pack(side="bottom", fill="x")
+    def _card(self, parent, padx=20, pady=18, **grid_kw):
+        """White card with a subtle bottom-right drop shadow."""
+        shadow = tk.Frame(parent, bg=CARD_SH)
+        shadow.grid(**grid_kw)
+        shadow.rowconfigure(0, weight=1)
+        shadow.columnconfigure(0, weight=1)
+        inner = tk.Frame(shadow, bg=CARD, padx=padx, pady=pady)
+        inner.grid(row=0, column=0, sticky="nsew", padx=(0, 2), pady=(0, 2))
+        return inner
+
+    def _section_title(self, parent, icon, title):
+        row = tk.Frame(parent, bg=CARD)
+        row.pack(fill="x", pady=(0, 16))
+        tk.Label(row, text=icon, font=(FONT, 15), bg=CARD, fg=ACCENT
+                 ).pack(side="right", padx=(10, 0))
+        tk.Label(row, text=title, font=(FONT, 11, "bold"), bg=CARD, fg=TEXT
+                 ).pack(side="right")
+        tk.Frame(row, bg=SEP, height=1).pack(side="bottom", fill="x")
+
+    def _field_row(self, parent, label_text, widget_factory):
+        """A labelled field row with a border."""
+        row = tk.Frame(parent, bg=FIELD,
+                       highlightbackground=BORDER, highlightthickness=1)
+        row.pack(fill="x", pady=(0, 8))
+        tk.Label(row, text=label_text, font=(FONT, 10), bg=FIELD, fg=MUTED,
+                 padx=14, pady=10).pack(side="right")
+        widget_factory(row)
+        return row
 
     # ── Build UI ──────────────────────────────────────────────────────────────
 
     def _build_ui(self):
-        # ── Header ──────────────────────────────────────────────────────────
-        hdr = tk.Frame(self.root, bg=BG)
-        hdr.pack(fill="x", padx=24, pady=(14, 10))
 
-        logo_box = tk.Frame(hdr, bg=ACCENT, width=46, height=46,
-                            highlightbackground=A_DARK, highlightthickness=2)
-        logo_box.pack(side="left", padx=(0, 14))
-        logo_box.pack_propagate(False)
-        tk.Label(logo_box, text="⚡", font=(FONT, 18), bg=ACCENT, fg="white").pack(expand=True)
+        # ── Header band ─────────────────────────────────────────────────────
+        hdr = tk.Frame(self.root, bg=HDR_BG)
+        hdr.pack(fill="x")
 
-        title_f = tk.Frame(hdr, bg=BG)
+        hdr_inner = tk.Frame(hdr, bg=HDR_BG)
+        hdr_inner.pack(fill="x", padx=28, pady=14)
+
+        # logo pill
+        logo_pill = tk.Frame(hdr_inner, bg=A_DARK,
+                             highlightbackground="#003d28", highlightthickness=1)
+        logo_pill.pack(side="left", padx=(0, 16))
+        tk.Label(logo_pill, text="  ⚡  ", font=(FONT, 20), bg=A_DARK,
+                 fg="white", pady=6).pack()
+
+        title_f = tk.Frame(hdr_inner, bg=HDR_BG)
         title_f.pack(side="left")
         tk.Label(title_f, text="WhatsApp Studio Notifier",
-                 font=(FONT, 16, "bold"), bg=BG, fg=ACCENT).pack(anchor="w")
-        tk.Label(title_f, text="פותח ע״י עילאי ברגיל",
-                 font=(FONT, 9), bg=BG, fg=MUTED).pack(anchor="w")
+                 font=(FONT, 17, "bold"), bg=HDR_BG, fg="white").pack(anchor="w")
+        tk.Label(title_f, text="שליחת הודעות לקבוצות — פותח ע״י עילאי ברגיל",
+                 font=(FONT, 9), bg=HDR_BG, fg="#a8d5be").pack(anchor="w")
 
-        tk.Frame(self.root, bg=BORDER, height=1).pack(fill="x")
+        # version badge
+        ver = tk.Frame(hdr_inner, bg=A_DARK)
+        ver.pack(side="right")
+        tk.Label(ver, text=" v2.0 ", font=(FONT, 8, "bold"),
+                 bg=A_DARK, fg="#a8d5be", pady=4, padx=6).pack()
 
-        # ── Two-Column Grid ──────────────────────────────────────────────────
-        main = tk.Frame(self.root, bg=BG)
-        main.pack(fill="both", expand=True, padx=20, pady=14)
-        main.columnconfigure(0, weight=38, minsize=280)
-        main.columnconfigure(1, weight=62, minsize=480)
-        main.rowconfigure(0, weight=1)
+        # thin bottom strip on header
+        tk.Frame(self.root, bg=HDR_DK, height=3).pack(fill="x")
 
-        left = tk.Frame(main, bg=BG)
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        # ── Two-column body ──────────────────────────────────────────────────
+        body = tk.Frame(self.root, bg=BG)
+        body.pack(fill="both", expand=True, padx=22, pady=18)
+        body.columnconfigure(0, weight=36, minsize=290)
+        body.columnconfigure(1, weight=64, minsize=500)
+        body.rowconfigure(0, weight=1)
+
+        left = tk.Frame(body, bg=BG)
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
         left.columnconfigure(0, weight=1)
         left.rowconfigure(1, weight=1)
 
-        right = tk.Frame(main, bg=BG)
-        right.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        right = tk.Frame(body, bg=BG)
+        right.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
         right.columnconfigure(0, weight=1)
         right.rowconfigure(0, weight=2)
         right.rowconfigure(3, weight=1)
@@ -198,159 +279,164 @@ class WhatsAppApp:
         self._build_left(left)
         self._build_right(right)
 
+    # ── Left column ───────────────────────────────────────────────────────────
+
     def _build_left(self, parent):
-        # ── Settings Card ────────────────────────────────────────────────────
-        settings = tk.Frame(parent, bg=CARD, padx=18, pady=16,
-                            highlightbackground=BORDER, highlightthickness=1)
-        settings.grid(row=0, column=0, sticky="ew", pady=(0, 10))
 
-        self._section_title(settings, "⚙", "הגדרות קמפיין")
+        # ── Settings card ────────────────────────────────────────────────────
+        scard = self._card(parent, row=0, column=0, sticky="ew", pady=(0, 12))
+        self._section_title(scard, "⚙️", "הגדרות קמפיין")
 
-        delay_row = tk.Frame(settings, bg=FIELD, pady=10, padx=14,
+        # delay row
+        delay_row = tk.Frame(scard, bg=FIELD,
                              highlightbackground=BORDER, highlightthickness=1)
         delay_row.pack(fill="x", pady=(0, 8))
-        tk.Label(delay_row, text="שניות בין הודעות (מינ׳ 1.5)",
-                 font=(FONT, 10), bg=FIELD, fg=MUTED).pack(side="right")
-        entry_frame = tk.Frame(delay_row, bg=ACCENT, padx=1, pady=1)
-        entry_frame.pack(side="left")
-        tk.Entry(entry_frame, textvariable=self.delay_var, width=4,
+        tk.Label(delay_row, text="שניות בין הודעות  (מינ׳ 1.5)",
+                 font=(FONT, 10), bg=FIELD, fg=MUTED,
+                 padx=14, pady=11).pack(side="right")
+        # accent-bordered entry
+        entry_wrap = tk.Frame(delay_row, bg=ACCENT, padx=1, pady=1)
+        entry_wrap.pack(side="left", padx=12)
+        tk.Entry(entry_wrap, textvariable=self.delay_var, width=5,
                  font=(FONT, 12, "bold"), justify="center",
                  relief="flat", bg=FIELD, fg=ACCENT, bd=0,
-                 insertbackground=ACCENT).pack()
+                 insertbackground=ACCENT).pack(ipady=4)
 
-        confirm_row = tk.Frame(settings, bg=FIELD, pady=10, padx=14,
+        # manual confirm row
+        confirm_row = tk.Frame(scard, bg=FIELD,
                                highlightbackground=BORDER, highlightthickness=1)
         confirm_row.pack(fill="x")
-        tk.Checkbutton(confirm_row, text="אישור ידני לפני שליחה",
+        tk.Checkbutton(confirm_row, text="אישור ידני לפני כל שליחה",
                        variable=self.manual_confirm_var,
                        font=(FONT, 10), bg=FIELD, fg=TEXT,
                        activebackground=FIELD, selectcolor=ACCENT,
-                       cursor="hand2").pack(side="right")
+                       cursor="hand2", padx=14, pady=11).pack(side="right")
 
-        # ── Numbers Card ─────────────────────────────────────────────────────
-        nums = tk.Frame(parent, bg=CARD, padx=18, pady=16,
-                        highlightbackground=BORDER, highlightthickness=1)
-        nums.grid(row=1, column=0, sticky="nsew")
+        # ── Numbers card ─────────────────────────────────────────────────────
+        ncard = self._card(parent, row=1, column=0, sticky="nsew")
+        self._section_title(ncard, "👥", "רשימת תפוצה")
 
-        self._section_title(nums, "👥", "רשימת תפוצה")
+        # hint label
+        tk.Label(ncard, text="מספר לשורה, פסיק או רווח — ישראל: 05X…  בינ׳: +XX…",
+                 font=(FONT, 8), bg=CARD, fg=MUTED, anchor="e").pack(fill="x", pady=(0, 6))
 
-        # Textarea wrapper — uses pack inside nums, grid inside wrapper
-        nums_wrap = tk.Frame(nums, bg=FIELD,
+        # textarea + scrollbar wrapper
+        nums_wrap = tk.Frame(ncard, bg=FIELD,
                              highlightbackground=BORDER, highlightthickness=1)
         nums_wrap.pack(fill="both", expand=True)
         nums_wrap.rowconfigure(0, weight=1)
         nums_wrap.columnconfigure(0, weight=1)
 
-        nums_scroll = tk.Scrollbar(nums_wrap)
+        nums_scroll = tk.Scrollbar(nums_wrap, bg=BORDER, troughcolor=FIELD,
+                                   width=10, relief="flat", bd=0)
         nums_scroll.grid(row=0, column=1, sticky="ns")
 
         self.numbers_text = tk.Text(
             nums_wrap, font=(FONT, 11), bd=0, relief="flat",
-            bg=FIELD, fg=TEXT, wrap="word", padx=10, pady=8,
+            bg=FIELD, fg=TEXT, wrap="word", padx=12, pady=10,
             insertbackground=ACCENT,
             yscrollcommand=nums_scroll.set
         )
         self.numbers_text.grid(row=0, column=0, sticky="nsew")
         nums_scroll.config(command=self.numbers_text.yview)
         self.numbers_text.tag_configure("rtl", justify="right")
-        self.numbers_text.bind("<KeyRelease>",
-                               lambda e: e.widget.tag_add("rtl", "1.0", "end"))
-        self._bind_clipboard(self.numbers_text)
+        self._bind_text_widget(self.numbers_text)
 
-        # Buttons
-        btn_row = tk.Frame(nums, bg=CARD)
+        # action buttons below numbers
+        btn_row = tk.Frame(ncard, bg=CARD)
         btn_row.pack(fill="x", pady=(10, 0))
+        self._btn(btn_row, "ספור מספרים", self.count_numbers,
+                  A_LIGHT, ACCENT, "#c8e8d8",
+                  font=(FONT, 9, "bold"), padx=14, pady=6).pack(side="right", padx=(4, 0))
+        self._btn(btn_row, "🗑 נקה", self.clear_numbers,
+                  D_LIGHT, DANGER, "#fad7d4",
+                  font=(FONT, 9, "bold"), padx=14, pady=6).pack(side="right", padx=4)
 
-        self._btn(btn_row, "ספור", self.count_numbers,
-                  BORDER, ACCENT, "#c6d0c6",
-                  font=(FONT, 9, "bold"), padx=14, pady=6).pack(side="right", padx=3)
-        self._btn(btn_row, "נקה רשימה", self.clear_numbers,
-                  "#ffdad6", DANGER, "#f5c0bc",
-                  font=(FONT, 9, "bold"), padx=14, pady=6).pack(side="right", padx=3)
-        tk.Label(btn_row, text="מספר לשורה, פסיק או רווח",
-                 font=(FONT, 8), bg=CARD, fg=MUTED).pack(side="left")
+    # ── Right column ──────────────────────────────────────────────────────────
 
     def _build_right(self, parent):
-        # ── Message Card ─────────────────────────────────────────────────────
-        msg = tk.Frame(parent, bg=CARD, padx=18, pady=16,
-                       highlightbackground=BORDER, highlightthickness=1)
-        msg.grid(row=0, column=0, sticky="nsew", pady=(0, 10))
 
-        self._section_title(msg, "💬", "תוכן ההודעה")
+        # ── Message card ─────────────────────────────────────────────────────
+        mcard = self._card(parent, row=0, column=0, sticky="nsew", pady=(0, 12))
+        self._section_title(mcard, "💬", "תוכן ההודעה")
 
-        # Textarea wrapper — pack inside msg, grid inside wrapper
-        msg_wrap = tk.Frame(msg, bg=FIELD,
+        # message textarea
+        msg_wrap = tk.Frame(mcard, bg=FIELD,
                             highlightbackground=BORDER, highlightthickness=1)
         msg_wrap.pack(fill="both", expand=True)
         msg_wrap.rowconfigure(0, weight=1)
         msg_wrap.columnconfigure(0, weight=1)
 
-        msg_scroll = tk.Scrollbar(msg_wrap)
+        msg_scroll = tk.Scrollbar(msg_wrap, bg=BORDER, troughcolor=FIELD,
+                                  width=10, relief="flat", bd=0)
         msg_scroll.grid(row=0, column=1, sticky="ns")
 
         self.message_text = tk.Text(
             msg_wrap, font=(FONT, 12), bd=0, relief="flat",
-            bg=FIELD, fg=TEXT, wrap="word", padx=12, pady=10,
+            bg=FIELD, fg=TEXT, wrap="word", padx=14, pady=12,
             insertbackground=ACCENT,
             yscrollcommand=msg_scroll.set
         )
         self.message_text.grid(row=0, column=0, sticky="nsew")
         msg_scroll.config(command=self.message_text.yview)
         self.message_text.tag_configure("rtl", justify="right")
-        self._bind_clipboard(self.message_text)
+        self._bind_text_widget(self.message_text)
         self.message_text.insert("1.0",
             "שלום,\nרצינו לעדכן שהשיעור היום בוטל.\nעמכם הסליחה ותודה על ההבנה.", "rtl")
-        self.message_text.bind("<KeyRelease>",
-                               lambda e: e.widget.tag_add("rtl", "1.0", "end"))
 
         # Template bar
-        tpl_bar = tk.Frame(msg, bg=TBAR, pady=10, padx=8)
+        tpl_bar = tk.Frame(mcard, bg=TBAR, pady=10, padx=10)
         tpl_bar.pack(fill="x")
 
+        tk.Label(tpl_bar, text="תבניות מהירות:",
+                 font=(FONT, 8, "bold"), bg=TBAR, fg=MUTED).pack(side="right", padx=(0, 4))
+
         templates = [
-            ("📅 ביטול שיעור", self._tpl_cancel),
-            ("🕒 דחיית שיעור", self._tpl_delay),
-            ("🎉 הודעת חג",    self._tpl_holiday),
-            ("📢 מבצע סטודיו", self._tpl_promo),
             ("🗑 נקה",         self.clear_message),
+            ("📢 מבצע",        self._tpl_promo),
+            ("🎉 חג",          self._tpl_holiday),
+            ("🕒 דחייה",       self._tpl_delay),
+            ("📅 ביטול שיעור", self._tpl_cancel),
         ]
-        for label, cmd in reversed(templates):
+        for label, cmd in templates:
             self._btn(tpl_bar, label, cmd,
-                      FIELD, MUTED, BORDER,
-                      font=(FONT, 9, "bold"), padx=12, pady=6,
+                      CARD, MUTED, BORDER,
+                      font=(FONT, 9, "bold"), padx=11, pady=5,
                       highlightbackground=BORDER, highlightthickness=1
                       ).pack(side="right", padx=3)
 
-        # ── Actions Row ──────────────────────────────────────────────────────
+        # ── Action buttons row ────────────────────────────────────────────────
         actions = tk.Frame(parent, bg=BG)
-        actions.grid(row=1, column=0, sticky="ew", pady=(0, 6))
+        actions.grid(row=1, column=0, sticky="ew", pady=(0, 8))
 
         self.start_button = self._btn(
             actions, "🚀  התחל שליחה עכשיו", self._start_thread,
             ACCENT, "white", A_DARK,
-            font=(FONT, 13, "bold"), pady=13, padx=36
+            font=(FONT, 13, "bold"), pady=14, padx=40
         )
         self.start_button.pack(side="left")
 
         self.stop_button = self._btn(
-            actions, "⛔  עצור שליחה", self._stop_sending,
+            actions, "⛔  עצור", self._stop_sending,
             DANGER, "white", D_DARK,
-            font=(FONT, 13, "bold"), pady=13, padx=36
+            font=(FONT, 13, "bold"), pady=14, padx=40
         )
-        # מוסתר עד שמתחילים
+        # hidden until sending starts
 
         side_btns = tk.Frame(actions, bg=BG)
         side_btns.pack(side="right")
         self._btn(side_btns, "📱 חיבור ראשוני", self._first_login,
-                  CARD, MUTED, BORDER,
-                  highlightbackground=BORDER, highlightthickness=1).pack(side="right", padx=4)
+                  CARD, MUTED, A_LIGHT,
+                  highlightbackground=BORDER, highlightthickness=1
+                  ).pack(side="right", padx=(6, 0))
         self._btn(side_btns, "✓ בדיקת תקינות", self.validate_inputs,
-                  CARD, MUTED, BORDER,
-                  highlightbackground=BORDER, highlightthickness=1).pack(side="right", padx=4)
+                  CARD, MUTED, A_LIGHT,
+                  highlightbackground=BORDER, highlightthickness=1
+                  ).pack(side="right", padx=6)
 
-        # ── Progress ─────────────────────────────────────────────────────────
+        # ── Progress strip ────────────────────────────────────────────────────
         prog = tk.Frame(parent, bg=BG)
-        prog.grid(row=2, column=0, sticky="ew", pady=(0, 6))
+        prog.grid(row=2, column=0, sticky="ew", pady=(0, 8))
 
         self._progress_label = tk.Label(prog, text="",
                                         font=(FONT, 9), bg=BG, fg=MUTED)
@@ -359,36 +445,41 @@ class WhatsAppApp:
         style = ttk.Style()
         style.theme_use("default")
         style.configure("ws.Horizontal.TProgressbar",
-                        troughcolor=BORDER, background=ACCENT, thickness=5)
+                        troughcolor=BORDER, background=ACCENT,
+                        thickness=6, borderwidth=0)
         self._progress_bar = ttk.Progressbar(
             prog, variable=self._progress_var,
             style="ws.Horizontal.TProgressbar", mode="determinate"
         )
         self._progress_bar.pack(fill="x")
 
-        # ── Log (dark terminal) ───────────────────────────────────────────────
-        log_outer = tk.Frame(parent, bg=LOG_BG, padx=16, pady=14,
-                             highlightbackground="#0a1510", highlightthickness=1)
+        # ── Live log terminal ─────────────────────────────────────────────────
+        log_outer = tk.Frame(parent, bg=LOG_BG, padx=16, pady=14)
         log_outer.grid(row=3, column=0, sticky="nsew")
         log_outer.rowconfigure(1, weight=1)
         log_outer.columnconfigure(0, weight=1)
 
+        # terminal title bar
         log_hdr = tk.Frame(log_outer, bg=LOG_BG)
         log_hdr.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
-        dots_frame = tk.Frame(log_hdr, bg=LOG_BG)
-        dots_frame.pack(side="left")
-        for dot_color in ("#ff5f57", "#ffbd2e", "#28c940"):
-            tk.Label(dots_frame, text="●", font=(FONT, 9),
-                     bg=LOG_BG, fg=dot_color).pack(side="left", padx=1)
-        tk.Label(log_hdr, text="לוג פעילות חי",
-                 font=(FONT, 9, "bold"), bg=LOG_BG, fg=LOG_OK).pack(side="right")
 
-        log_scroll = tk.Scrollbar(log_outer, bg=LOG_BG, troughcolor=LOG_BG, bd=0)
+        dots = tk.Frame(log_hdr, bg=LOG_BG)
+        dots.pack(side="left")
+        for col in ("#ff5f57", "#ffbd2e", "#28c940"):
+            tk.Label(dots, text="●", font=(FONT, 10), bg=LOG_BG,
+                     fg=col).pack(side="left", padx=2)
+
+        tk.Label(log_hdr, text="●  לוג פעילות חי",
+                 font=("Consolas", 9, "bold"), bg=LOG_BG, fg=LOG_OK
+                 ).pack(side="right")
+
+        log_scroll = tk.Scrollbar(log_outer, bg=LOG_BG, troughcolor=LOG_BG,
+                                  width=8, bd=0, relief="flat")
         log_scroll.grid(row=1, column=1, sticky="ns")
 
         self.log_text = tk.Text(
             log_outer, font=("Consolas", 9),
-            bg=LOG_BG, fg="#cccccc", bd=0, relief="flat",
+            bg=LOG_BG, fg="#b0c4b8", bd=0, relief="flat",
             state="disabled", wrap="word", padx=4, pady=2,
             yscrollcommand=log_scroll.set
         )
@@ -398,16 +489,16 @@ class WhatsAppApp:
         self.log_text.tag_configure("success", foreground=LOG_OK)
         self.log_text.tag_configure("error",   foreground=LOG_ERR)
         self.log_text.tag_configure("warning", foreground=LOG_WARN)
-        self.log_text.tag_configure("info",    foreground="#cccccc")
+        self.log_text.tag_configure("info",    foreground="#b0c4b8")
 
-        self._ui_log("המערכת נטענה ומוכנה לעבודה.", "success")
+        self._ui_log("✅ המערכת נטענה ומוכנה לעבודה.", "success")
 
     # ── Logging (thread-safe) ─────────────────────────────────────────────────
 
     def _ui_log(self, msg: str, level: str = "info"):
         ts = time.strftime("%H:%M:%S")
         self.log_text.config(state="normal")
-        self.log_text.insert("end", f"[{ts}] {msg}\n", level)
+        self.log_text.insert("end", f"[{ts}]  {msg}\n", level)
         self.log_text.see("end")
         self.log_text.config(state="disabled")
 
@@ -471,7 +562,6 @@ class WhatsAppApp:
 
     def _create_driver(self):
         os.makedirs(BOT_PROFILE_DIR, exist_ok=True)
-
         for lock_file in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
             try:
                 os.remove(os.path.join(BOT_PROFILE_DIR, lock_file))
@@ -487,7 +577,7 @@ class WhatsAppApp:
 
         if _USE_WEBDRIVER_MANAGER:
             service = ChromeService(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=service, options=opts)
+            driver  = webdriver.Chrome(service=service, options=opts)
         else:
             driver = webdriver.Chrome(options=opts)
         driver.set_page_load_timeout(30)
@@ -680,7 +770,7 @@ class WhatsAppApp:
                                 pass
                             return False
                     except StaleElementReferenceException:
-                        break  # הדיאלוג נעלם — המשך לולאה
+                        break
 
                 # 2. כפתור שליחה
                 send_btns = driver.find_elements(By.XPATH,
@@ -690,7 +780,7 @@ class WhatsAppApp:
                         send_btns[0].click()
                     except StaleElementReferenceException:
                         time.sleep(0.3)
-                        continue  # מצא מחדש ולחץ שוב
+                        continue
                     except Exception:
                         try:
                             driver.execute_script("arguments[0].click();", send_btns[0])
@@ -715,11 +805,11 @@ class WhatsAppApp:
                             return True
                     except StaleElementReferenceException:
                         time.sleep(0.3)
-                        continue  # מצא מחדש
+                        continue
 
             except StaleElementReferenceException:
                 time.sleep(0.3)
-                continue  # הדף התעדכן — נסה שוב
+                continue
 
             time.sleep(0.5)
 
@@ -730,5 +820,5 @@ class WhatsAppApp:
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = WhatsAppApp(root)
+    app  = WhatsAppApp(root)
     root.mainloop()
