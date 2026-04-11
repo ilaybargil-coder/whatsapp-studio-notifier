@@ -10,7 +10,8 @@ a = Analysis(
     pathex=[],
     binaries=bins_sel + bins_wdm + bins_pil,
     datas=datas_sel + datas_wdm + datas_pil + [
-        ('logo.png', '.'),   # bundle the logo next to the exe
+        ('logo.png', '.'),       # original full logo
+        ('logo_icon.png', '.'),  # pre-cropped square icon
     ],
     hiddenimports=hidden_sel + hidden_wdm + hidden_pil + [
         'pkg_resources',

@@ -112,21 +112,32 @@ class WhatsAppApp:
     # ── Icon ──────────────────────────────────────────────────────────────────
 
     def _set_app_icon(self):
-        """Load logo.png as the window icon (falls back to green circle)."""
-        logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo.png")
+        """Load logo_icon.png as the window icon (falls back to green circle)."""
+        base    = os.path.dirname(os.path.abspath(__file__))
+        # prefer the pre-cropped square icon; fall back to full logo
+        for name in ("logo_icon.png", "logo.png"):
+            icon_path = os.path.join(base, name)
+            if os.path.exists(icon_path):
+                break
+        else:
+            icon_path = None
+
         try:
-            if _HAS_PIL and os.path.exists(logo_path):
-                pil_img = Image.open(logo_path).resize((64, 64), Image.LANCZOS)
-                self._icon_ref = ImageTk.PhotoImage(pil_img)  # keep reference!
+            if _HAS_PIL and icon_path:
+                pil_img = Image.open(icon_path).resize((256, 256), Image.LANCZOS)
+                self._icon_ref = ImageTk.PhotoImage(pil_img)
                 self.root.iconphoto(True, self._icon_ref)
 
-                # On Windows, also set .ico for taskbar
+                # On Windows also write a proper .ico for the taskbar
                 if platform.system() == "Windows":
-                    ico_path = logo_path.replace(".png", ".ico")
+                    ico_path = os.path.join(base, "logo_icon.ico")
                     if not os.path.exists(ico_path):
                         pil_img.save(ico_path, format="ICO",
-                                     sizes=[(16,16),(32,32),(48,48),(64,64)])
-                    self.root.iconbitmap(ico_path)
+                                     sizes=[(16,16),(32,32),(48,48),(64,64),(256,256)])
+                    try:
+                        self.root.iconbitmap(ico_path)
+                    except Exception:
+                        pass
                 return
         except Exception:
             pass
