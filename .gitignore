@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# PyInstaller
+build/
+dist/
+*.spec.bak
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# PyCharm
+.idea/
+
+# Chrome profile (contains personal session data)
+WhatsAppBotProfile/
+C:\WhatsAppBotProfile/
+
+# Claude
+.claude/
