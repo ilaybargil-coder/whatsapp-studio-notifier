@@ -13,6 +13,7 @@ from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import StaleElementReferenceException
 
 try:
     from webdriver_manager.chrome import ChromeDriverManager
@@ -91,6 +92,47 @@ class WhatsAppApp:
         self._progress_var      = tk.IntVar(value=0)
 
         self._build_ui()
+
+    # ── Clipboard Helpers ─────────────────────────────────────────────────────
+
+    def _bind_clipboard(self, widget: tk.Text):
+        """Explicitly bind Ctrl/Cmd shortcuts so paste works on all platforms."""
+        def _paste(e):
+            try:
+                widget.insert(tk.INSERT, widget.clipboard_get())
+            except tk.TclError:
+                pass
+            return "break"
+
+        def _copy(e):
+            try:
+                widget.clipboard_clear()
+                widget.clipboard_append(widget.selection_get())
+            except tk.TclError:
+                pass
+            return "break"
+
+        def _cut(e):
+            _copy(e)
+            try:
+                widget.delete(tk.SEL_FIRST, tk.SEL_LAST)
+            except tk.TclError:
+                pass
+            return "break"
+
+        def _select_all(e):
+            widget.tag_add(tk.SEL, "1.0", "end-1c")
+            widget.mark_set(tk.INSERT, "end-1c")
+            return "break"
+
+        for key in ("<Control-v>", "<Control-V>"):
+            widget.bind(key, _paste)
+        for key in ("<Control-c>", "<Control-C>"):
+            widget.bind(key, _copy)
+        for key in ("<Control-x>", "<Control-X>"):
+            widget.bind(key, _cut)
+        for key in ("<Control-a>", "<Control-A>"):
+            widget.bind(key, _select_all)
 
     # ── UI Helpers ────────────────────────────────────────────────────────────
 
@@ -213,6 +255,7 @@ class WhatsAppApp:
         self.numbers_text.tag_configure("rtl", justify="right")
         self.numbers_text.bind("<KeyRelease>",
                                lambda e: e.widget.tag_add("rtl", "1.0", "end"))
+        self._bind_clipboard(self.numbers_text)
 
         # Buttons
         btn_row = tk.Frame(nums, bg=CARD)
@@ -254,6 +297,7 @@ class WhatsAppApp:
         self.message_text.grid(row=0, column=0, sticky="nsew")
         msg_scroll.config(command=self.message_text.yview)
         self.message_text.tag_configure("rtl", justify="right")
+        self._bind_clipboard(self.message_text)
         self.message_text.insert("1.0",
             "שלום,\nרצינו לעדכן שהשיעור היום בוטל.\nעמכם הסליחה ותודה על ההבנה.", "rtl")
         self.message_text.bind("<KeyRelease>",
@@ -625,37 +669,57 @@ class WhatsAppApp:
         deadline = time.time() + SEND_TIMEOUT
 
         while time.time() < deadline:
-            # 1. דיאלוג מספר לא תקין
-            for dialog in driver.find_elements(By.XPATH, '//div[@role="dialog"]'):
-                if "לא קיים ב-WhatsApp" in (dialog.text or ""):
+            try:
+                # 1. דיאלוג מספר לא תקין
+                for dialog in driver.find_elements(By.XPATH, '//div[@role="dialog"]'):
                     try:
-                        dialog.find_element(By.XPATH, './/button').click()
+                        if "לא קיים ב-WhatsApp" in (dialog.text or ""):
+                            try:
+                                dialog.find_element(By.XPATH, './/button').click()
+                            except Exception:
+                                pass
+                            return False
+                    except StaleElementReferenceException:
+                        break  # הדיאלוג נעלם — המשך לולאה
+
+                # 2. כפתור שליחה
+                send_btns = driver.find_elements(By.XPATH,
+                    '//span[@data-icon="send"]/ancestor::button[1]')
+                if send_btns:
+                    try:
+                        send_btns[0].click()
+                    except StaleElementReferenceException:
+                        time.sleep(0.3)
+                        continue  # מצא מחדש ולחץ שוב
                     except Exception:
-                        pass
-                    return False
-
-            # 2. כפתור שליחה
-            send_btns = driver.find_elements(By.XPATH,
-                '//span[@data-icon="send"]/ancestor::button[1]')
-            if send_btns:
-                try:
-                    send_btns[0].click()
-                except Exception:
-                    driver.execute_script("arguments[0].click();", send_btns[0])
-                time.sleep(2.0)
-                return True
-
-            # 3. גיבוי — Enter בתיבת הטקסט
-            text_boxes = driver.find_elements(By.XPATH,
-                '//div[@contenteditable="true"][@data-tab="10"]')
-            if text_boxes:
-                content = (text_boxes[0].text or
-                           driver.execute_script("return arguments[0].textContent;",
-                                                 text_boxes[0]) or "")
-                if content.strip():
-                    text_boxes[0].send_keys(Keys.ENTER)
+                        try:
+                            driver.execute_script("arguments[0].click();", send_btns[0])
+                        except Exception:
+                            time.sleep(0.3)
+                            continue
                     time.sleep(2.0)
                     return True
+
+                # 3. גיבוי — Enter בתיבת הטקסט
+                text_boxes = driver.find_elements(By.XPATH,
+                    '//div[@contenteditable="true"][@data-tab="10"]')
+                if text_boxes:
+                    try:
+                        content = (text_boxes[0].text or
+                                   driver.execute_script(
+                                       "return arguments[0].textContent;", text_boxes[0]
+                                   ) or "")
+                        if content.strip():
+                            text_boxes[0].send_keys(Keys.ENTER)
+                            time.sleep(2.0)
+                            return True
+                    except StaleElementReferenceException:
+                        time.sleep(0.3)
+                        continue  # מצא מחדש
+
+            except StaleElementReferenceException:
+                time.sleep(0.3)
+                continue  # הדף התעדכן — נסה שוב
 
             time.sleep(0.5)
 
