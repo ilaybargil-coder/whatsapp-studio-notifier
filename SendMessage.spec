@@ -3,19 +3,24 @@ from PyInstaller.utils.hooks import collect_all
 
 datas_sel, bins_sel, hidden_sel = collect_all('selenium')
 datas_wdm, bins_wdm, hidden_wdm = collect_all('webdriver_manager')
+datas_pil, bins_pil, hidden_pil = collect_all('PIL')
 
 a = Analysis(
     ['SendMessage.py'],
     pathex=[],
-    binaries=bins_sel + bins_wdm,
-    datas=datas_sel + datas_wdm,
-    hiddenimports=hidden_sel + hidden_wdm + [
+    binaries=bins_sel + bins_wdm + bins_pil,
+    datas=datas_sel + datas_wdm + datas_pil + [
+        ('logo.png', '.'),   # bundle the logo next to the exe
+    ],
+    hiddenimports=hidden_sel + hidden_wdm + hidden_pil + [
         'pkg_resources',
         'urllib3',
         'certifi',
         'charset_normalizer',
         'idna',
         'requests',
+        'PIL.Image',
+        'PIL.ImageTk',
     ],
     hookspath=[],
     hooksconfig={},
@@ -46,5 +51,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,
+    icon='logo.png',   # taskbar / exe icon on Windows
 )

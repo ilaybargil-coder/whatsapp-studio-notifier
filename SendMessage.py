@@ -21,6 +21,15 @@ try:
 except ImportError:
     _USE_WEBDRIVER_MANAGER = False
 
+try:
+    from PIL import Image, ImageTk
+    _HAS_PIL = True
+except ImportError:
+    _HAS_PIL = False
+
+# Mac uses Command, Windows/Linux use Control
+_MOD = "Command" if platform.system() == "Darwin" else "Control"
+
 # ── App Config ───────────────────────────────────────────────────────────────
 APP_TITLE = "WhatsApp Studio Notifier"
 if platform.system() == "Windows":
@@ -103,25 +112,40 @@ class WhatsAppApp:
     # ── Icon ──────────────────────────────────────────────────────────────────
 
     def _set_app_icon(self):
-        """Create a simple green-circle icon and set it as the window icon."""
+        """Load logo.png as the window icon (falls back to green circle)."""
+        logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo.png")
+        try:
+            if _HAS_PIL and os.path.exists(logo_path):
+                pil_img = Image.open(logo_path).resize((64, 64), Image.LANCZOS)
+                self._icon_ref = ImageTk.PhotoImage(pil_img)  # keep reference!
+                self.root.iconphoto(True, self._icon_ref)
+
+                # On Windows, also set .ico for taskbar
+                if platform.system() == "Windows":
+                    ico_path = logo_path.replace(".png", ".ico")
+                    if not os.path.exists(ico_path):
+                        pil_img.save(ico_path, format="ICO",
+                                     sizes=[(16,16),(32,32),(48,48),(64,64)])
+                    self.root.iconbitmap(ico_path)
+                return
+        except Exception:
+            pass
+
+        # Fallback: draw a simple green circle
         try:
             size = 64
             img  = tk.PhotoImage(width=size, height=size)
             cx = cy = size // 2
             r  = cx - 2
-            # green circle
             for y in range(size):
-                row_colors = []
+                row = []
                 for x in range(size):
                     dist = ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5
-                    if dist <= r:
-                        row_colors.append(ACCENT)
-                    else:
-                        row_colors.append(BG)
-                img.put("{" + " ".join(row_colors) + "}", to=(0, y))
+                    row.append(ACCENT if dist <= r else BG)
+                img.put("{" + " ".join(row) + "}", to=(0, y))
             self.root.iconphoto(True, img)
         except Exception:
-            pass  # not critical
+            pass
 
     # ── Clipboard + RTL helpers ───────────────────────────────────────────────
 
@@ -172,13 +196,13 @@ class WhatsAppApp:
             widget.mark_set(tk.INSERT, "end-1c")
             return "break"
 
-        for seq in ("<Control-v>", "<Control-V>"):
+        for seq in (f"<{_MOD}-v>", f"<{_MOD}-V>"):
             widget.bind(seq, _paste)
-        for seq in ("<Control-c>", "<Control-C>"):
+        for seq in (f"<{_MOD}-c>", f"<{_MOD}-C>"):
             widget.bind(seq, _copy)
-        for seq in ("<Control-x>", "<Control-X>"):
+        for seq in (f"<{_MOD}-x>", f"<{_MOD}-X>"):
             widget.bind(seq, _cut)
-        for seq in ("<Control-a>", "<Control-A>"):
+        for seq in (f"<{_MOD}-a>", f"<{_MOD}-A>"):
             widget.bind(seq, _select_all)
 
     # ── UI component helpers ──────────────────────────────────────────────────
