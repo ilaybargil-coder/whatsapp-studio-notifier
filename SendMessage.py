@@ -4,7 +4,9 @@ import time
 import urllib.parse
 import threading
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox
+
+import customtkinter as ctk
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -27,6 +29,10 @@ try:
 except ImportError:
     _HAS_PIL = False
 
+# ── Appearance ────────────────────────────────────────────────────────────────
+ctk.set_appearance_mode("light")
+ctk.set_default_color_theme("green")
+
 # ── App Config ────────────────────────────────────────────────────────────────
 APP_TITLE = "WhatsApp Studio Notifier"
 if platform.system() == "Windows":
@@ -40,24 +46,28 @@ SEND_TIMEOUT = 25
 _KC_V, _KC_C, _KC_X, _KC_A = 86, 67, 88, 65
 
 # ── Design Tokens ─────────────────────────────────────────────────────────────
-BG      = "#e4ebe4"   # darker page bg — cards stand out clearly
-CARD    = "#ffffff"   # pure white cards
-CARD_W  = "#ffffff"
-FIELD   = "#f4f8f5"   # very light input area
-ACCENT  = "#006b47"
-A_DARK  = "#004d34"
-A_LIGHT = "#d6efe3"
-DANGER  = "#ba1a1a"
-D_DARK  = "#93000a"
-D_LIGHT = "#ffdad6"
-TEXT    = "#171d19"
-MUTED   = "#4a6355"
-BORDER  = "#c8d8cc"
-LOG_BG  = "#111f18"
-LOG_OK  = "#4ade80"
-LOG_ERR = "#ff8a80"
-LOG_WRN = "#ffd54f"
-FONT    = "Segoe UI"
+BG       = "#eef2ee"
+CARD     = "#ffffff"
+FIELD    = "#f4f8f5"
+ACCENT   = "#006b47"
+A_DARK   = "#004d34"
+A_LIGHT  = "#d6efe3"
+DANGER   = "#ba1a1a"
+D_DARK   = "#93000a"
+D_LIGHT  = "#ffdad6"
+TEXT     = "#171d19"
+MUTED    = "#4a6355"
+BORDER   = "#c8d8cc"
+HDR_BG   = "#006b47"
+HDR_DK   = "#004d34"
+LOG_BG   = "#111f18"
+LOG_OK   = "#4ade80"
+LOG_ERR  = "#ff8a80"
+LOG_WRN  = "#ffd54f"
+FONT     = "Segoe UI"
+
+# Fonts are created inside __init__ after the root window exists
+F_BODY = F_SMALL = F_LABEL = F_TITLE = F_CTA = F_LOG = None
 
 
 # ── Phone helpers ─────────────────────────────────────────────────────────────
@@ -79,47 +89,15 @@ def normalize_il_number(phone: str) -> str:
     return phone
 
 
-# ── Toggle Switch widget ──────────────────────────────────────────────────────
-
-class ToggleSwitch(tk.Canvas):
-    W, H = 46, 26
-
-    def __init__(self, parent, variable: tk.BooleanVar, bg=CARD, **kw):
-        super().__init__(parent, width=self.W, height=self.H,
-                         bg=bg, highlightthickness=0, cursor="hand2", **kw)
-        self._var = variable
-        self._draw()
-        self.bind("<Button-1>", lambda e: self._toggle())
-        variable.trace_add("write", lambda *_: self._draw())
-
-    def _toggle(self):
-        self._var.set(not self._var.get())
-
-    def _draw(self):
-        self.delete("all")
-        on = self._var.get()
-        track = ACCENT if on else "#b0bdb5"
-        r = self.H // 2
-        # track
-        self.create_oval(0, 0, self.H, self.H, fill=track, outline="")
-        self.create_oval(self.W - self.H, 0, self.W, self.H, fill=track, outline="")
-        self.create_rectangle(r, 0, self.W - r, self.H, fill=track, outline="")
-        # thumb
-        pad = 3
-        x = self.W - self.H + pad if on else pad
-        self.create_oval(x, pad, x + self.H - 2*pad, self.H - pad,
-                         fill="white", outline="")
-
-
 # ── Main App ──────────────────────────────────────────────────────────────────
 
 class WhatsAppApp:
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root: ctk.CTk):
         self.root = root
         self.root.title(APP_TITLE)
-        self.root.geometry("1120x740")
-        self.root.minsize(940, 660)
-        self.root.configure(bg=BG)
+        self.root.geometry("1160x760")
+        self.root.minsize(960, 680)
+        self.root.configure(fg_color=BG)
 
         self._is_sending   = False
         self._stop_event   = threading.Event()
@@ -127,7 +105,17 @@ class WhatsAppApp:
 
         self.delay_var          = tk.StringVar(value="3")
         self.manual_confirm_var = tk.BooleanVar(value=False)
-        self._progress_var      = tk.IntVar(value=0)
+        self._progress_var      = tk.DoubleVar(value=0)
+        self._nums_badge_var    = tk.StringVar(value="0 מספרים")
+
+        # Create fonts here, after the root window exists
+        global F_BODY, F_SMALL, F_LABEL, F_TITLE, F_CTA, F_LOG
+        F_BODY  = ctk.CTkFont(family=FONT, size=13)
+        F_SMALL = ctk.CTkFont(family=FONT, size=10)
+        F_LABEL = ctk.CTkFont(family=FONT, size=11, weight="bold")
+        F_TITLE = ctk.CTkFont(family=FONT, size=17, weight="bold")
+        F_CTA   = ctk.CTkFont(family=FONT, size=14, weight="bold")
+        F_LOG   = ctk.CTkFont(family="Consolas", size=9)
 
         self._set_app_icon()
         self._build_ui()
@@ -155,154 +143,148 @@ class WhatsAppApp:
                 except Exception:
                     pass
 
-    # ── Text-widget helpers (RTL + clipboard) ────────────────────────────────
+    # ── Text-widget helpers ───────────────────────────────────────────────────
 
-    def _bind_text_widget(self, widget: tk.Text):
+    def _bind_text_widget(self, ctk_box: ctk.CTkTextbox):
+        """RTL display fix + full clipboard shortcuts on a CTkTextbox."""
+        w = ctk_box._textbox   # underlying tk.Text
 
         def _rtl(*_):
-            widget.tag_add("rtl", "1.0", "end")
+            w.tag_add("rtl", "1.0", "end")
 
-        widget.bind("<Key>",           lambda e: widget.after(1, _rtl))
-        widget.bind("<<Modified>>",    lambda e: _rtl())
-        widget.bind("<ButtonRelease>", lambda e: _rtl())
+        w.bind("<Key>",           lambda e: w.after(1, _rtl))
+        w.bind("<<Modified>>",    lambda e: _rtl())
+        w.bind("<ButtonRelease>", lambda e: _rtl())
 
         def _paste(e=None):
-            try:    txt = widget.clipboard_get()
+            try:    txt = w.clipboard_get()
             except tk.TclError: return "break"
-            try:    widget.delete(tk.SEL_FIRST, tk.SEL_LAST)
+            try:    w.delete(tk.SEL_FIRST, tk.SEL_LAST)
             except tk.TclError: pass
-            widget.insert(tk.INSERT, txt)
-            widget.after(1, _rtl)
+            w.insert(tk.INSERT, txt)
+            w.after(1, _rtl)
             return "break"
 
         def _copy(e=None):
             try:
-                widget.clipboard_clear()
-                widget.clipboard_append(widget.get(tk.SEL_FIRST, tk.SEL_LAST))
+                w.clipboard_clear()
+                w.clipboard_append(w.get(tk.SEL_FIRST, tk.SEL_LAST))
             except tk.TclError: pass
             return "break"
 
         def _cut(e=None):
             try:
-                widget.clipboard_clear()
-                widget.clipboard_append(widget.get(tk.SEL_FIRST, tk.SEL_LAST))
-                widget.delete(tk.SEL_FIRST, tk.SEL_LAST)
+                w.clipboard_clear()
+                w.clipboard_append(w.get(tk.SEL_FIRST, tk.SEL_LAST))
+                w.delete(tk.SEL_FIRST, tk.SEL_LAST)
             except tk.TclError: pass
             return "break"
 
         def _selall(e=None):
-            widget.tag_add(tk.SEL, "1.0", "end-1c")
-            widget.mark_set(tk.INSERT, "end-1c")
+            w.tag_add(tk.SEL, "1.0", "end-1c")
+            w.mark_set(tk.INSERT, "end-1c")
             return "break"
 
-        # ── keycode-based handler: works even when keyboard is in Hebrew ──────
+        # Physical keycode handler — works in Hebrew AND English keyboard
         def _ctrl_key(e):
-            if not (e.state & 0x4):   # Ctrl not held
-                return
+            if not (e.state & 0x4): return
             if   e.keycode == _KC_V: return _paste()
             elif e.keycode == _KC_C: return _copy()
             elif e.keycode == _KC_X: return _cut()
             elif e.keycode == _KC_A: return _selall()
 
-        widget.bind("<Control-Key>", _ctrl_key)   # covers all keyboard languages
-
-        # Fallbacks: explicit letter bindings + tkinter virtual events
+        w.bind("<Control-Key>", _ctrl_key)
         for s in ("<Control-v>","<Control-V>","<Command-v>","<Command-V>","<<Paste>>"):
-            widget.bind(s, _paste)
+            w.bind(s, _paste)
         for s in ("<Control-c>","<Control-C>","<Command-c>","<Command-C>","<<Copy>>"):
-            widget.bind(s, _copy)
+            w.bind(s, _copy)
         for s in ("<Control-x>","<Control-X>","<Command-x>","<Command-X>","<<Cut>>"):
-            widget.bind(s, _cut)
+            w.bind(s, _cut)
         for s in ("<Control-a>","<Control-A>","<Command-a>","<Command-A>"):
-            widget.bind(s, _selall)
+            w.bind(s, _selall)
 
-    # ── Generic button ────────────────────────────────────────────────────────
+    # ── UI helpers ────────────────────────────────────────────────────────────
 
-    def _btn(self, parent, text, command, bg, fg, hover, **kw):
-        props = dict(font=(FONT, 10, "bold"), relief="flat", bd=0,
-                     cursor="hand2", padx=22, pady=10, highlightthickness=0)
-        props.update(kw)
-        b = tk.Button(parent, text=text, command=command,
-                      bg=bg, fg=fg, activebackground=hover, activeforeground=fg,
-                      **props)
-        b.bind("<Enter>", lambda e: b.config(bg=hover))
-        b.bind("<Leave>", lambda e: b.config(bg=bg))
-        return b
+    def _card(self, parent, **kw) -> ctk.CTkFrame:
+        return ctk.CTkFrame(parent, fg_color=CARD, corner_radius=16,
+                            border_width=1, border_color=BORDER, **kw)
 
-    # ── Section header ────────────────────────────────────────────────────────
+    def _pill_btn(self, parent, text, command, fg, txt, hover, **kw) -> ctk.CTkButton:
+        kw.setdefault("font", F_BODY)
+        return ctk.CTkButton(parent, text=text, command=command,
+                             fg_color=fg, text_color=txt, hover_color=hover,
+                             corner_radius=50, **kw)
 
-    def _sec_hdr(self, parent, icon, title, badge_var=None):
-        row = tk.Frame(parent, bg=CARD)
+    def _section_hdr(self, parent, icon, title, badge_var=None):
+        row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", pady=(0, 14))
-        # icon + title on the right
-        tk.Label(row, text=icon,  font=(FONT, 13), bg=CARD, fg=ACCENT
-                 ).pack(side="right", padx=(8, 0))
-        tk.Label(row, text=title, font=(FONT, 9, "bold"), bg=CARD, fg=MUTED,
-                 ).pack(side="right")
-        # optional live badge on the left
-        if badge_var is not None:
-            self._badge_lbl = tk.Label(row, textvariable=badge_var,
-                                       font=(FONT, 8, "bold"),
-                                       bg=ACCENT, fg="white",
-                                       padx=8, pady=2)
-            self._badge_lbl.pack(side="left")
-        tk.Frame(row, bg=BORDER, height=1).pack(side="bottom", fill="x")
 
-    # ── Card frame ────────────────────────────────────────────────────────────
+        # badge on left
+        if badge_var:
+            ctk.CTkLabel(row, textvariable=badge_var,
+                         fg_color=ACCENT, text_color="white",
+                         corner_radius=50, font=F_SMALL,
+                         padx=10, pady=2).pack(side="left")
 
-    def _card(self, parent, card_padx=20, card_pady=18, **grid_kw):
-        shadow = tk.Frame(parent, bg="#9ab0a0")
-        shadow.grid(**grid_kw)
-        shadow.rowconfigure(0, weight=1)
-        shadow.columnconfigure(0, weight=1)
-        inner = tk.Frame(shadow, bg=CARD, padx=card_padx, pady=card_pady)
-        inner.grid(row=0, column=0, sticky="nsew", padx=(0, 2), pady=(0, 2))
-        return inner
+        # title + icon on right
+        ctk.CTkLabel(row, text=f"{title}  {icon}",
+                     font=F_LABEL, text_color=MUTED,
+                     anchor="e").pack(side="right")
+
+        ctk.CTkFrame(row, height=1, fg_color=BORDER).pack(
+            side="bottom", fill="x")
 
     # ── Build UI ──────────────────────────────────────────────────────────────
 
     def _build_ui(self):
 
-        # ── Header band ──────────────────────────────────────────────────────
-        hdr = tk.Frame(self.root, bg=ACCENT)
+        # ── Header ───────────────────────────────────────────────────────────
+        hdr = ctk.CTkFrame(self.root, fg_color=HDR_BG, corner_radius=0, height=72)
         hdr.pack(fill="x")
-        inner = tk.Frame(hdr, bg=ACCENT)
-        inner.pack(fill="x", padx=28, pady=14)
+        hdr.pack_propagate(False)
 
-        logo_f = tk.Frame(inner, bg=A_DARK, highlightbackground="#003d28",
-                          highlightthickness=1)
-        logo_f.pack(side="left", padx=(0, 14))
-        tk.Label(logo_f, text="  🚀  ", font=(FONT, 18), bg=A_DARK,
-                 fg="white", pady=5).pack()
+        inner = ctk.CTkFrame(hdr, fg_color="transparent")
+        inner.pack(fill="both", expand=True, padx=28)
 
-        tf = tk.Frame(inner, bg=ACCENT)
-        tf.pack(side="left")
-        tk.Label(tf, text="WhatsApp Studio Notifier",
-                 font=(FONT, 16, "bold"), bg=ACCENT, fg="white").pack(anchor="w")
-        tk.Label(tf, text="שליחת הודעות לקבוצות  ·  פותח ע״י עילאי ברגיל",
-                 font=(FONT, 9), bg=ACCENT, fg="#a8d5be").pack(anchor="w")
+        # logo pill
+        logo = ctk.CTkFrame(inner, fg_color=HDR_DK, corner_radius=12,
+                            width=50, height=50)
+        logo.pack(side="left", pady=11, padx=(0, 16))
+        logo.pack_propagate(False)
+        ctk.CTkLabel(logo, text="🚀", font=ctk.CTkFont(size=22)).pack(expand=True)
 
-        tk.Frame(inner, bg=A_DARK, width=1).pack(side="right", fill="y", padx=12)
-        ver = tk.Frame(inner, bg=A_DARK)
-        ver.pack(side="right")
-        tk.Label(ver, text=" v2.1 ", font=(FONT, 8, "bold"),
-                 bg=A_DARK, fg="#a8d5be", pady=5, padx=8).pack()
+        # title
+        tf = ctk.CTkFrame(inner, fg_color="transparent")
+        tf.pack(side="left", pady=11)
+        ctk.CTkLabel(tf, text="WhatsApp Studio Notifier",
+                     font=F_TITLE, text_color="white",
+                     anchor="w").pack(anchor="w")
+        ctk.CTkLabel(tf, text="שליחת הודעות לקבוצות  ·  פותח ע״י עילאי ברגיל",
+                     font=F_SMALL, text_color="#a8d5be",
+                     anchor="w").pack(anchor="w")
 
-        tk.Frame(self.root, bg=A_DARK, height=3).pack(fill="x")
+        # version
+        ctk.CTkLabel(inner, text=" v2.1 ",
+                     fg_color=HDR_DK, text_color="#a8d5be",
+                     corner_radius=8, font=F_SMALL,
+                     padx=8).pack(side="right", pady=22)
 
-        # ── Two-column body ──────────────────────────────────────────────────
-        body = tk.Frame(self.root, bg=BG)
+        ctk.CTkFrame(self.root, height=3, fg_color=HDR_DK,
+                     corner_radius=0).pack(fill="x")
+
+        # ── Body grid ────────────────────────────────────────────────────────
+        body = ctk.CTkFrame(self.root, fg_color=BG, corner_radius=0)
         body.pack(fill="both", expand=True, padx=22, pady=18)
         body.columnconfigure(0, weight=38, minsize=300)
         body.columnconfigure(1, weight=62, minsize=520)
         body.rowconfigure(0, weight=1)
 
-        left = tk.Frame(body, bg=BG)
+        left = ctk.CTkFrame(body, fg_color="transparent")
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
         left.columnconfigure(0, weight=1)
         left.rowconfigure(1, weight=1)
 
-        right = tk.Frame(body, bg=BG)
+        right = ctk.CTkFrame(body, fg_color="transparent")
         right.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
         right.columnconfigure(0, weight=1)
         right.rowconfigure(0, weight=2)
@@ -316,111 +298,123 @@ class WhatsAppApp:
     def _build_left(self, parent):
 
         # ── Settings card ────────────────────────────────────────────────────
-        sc = self._card(parent, row=0, column=0, sticky="ew", pady=(0, 12))
-        self._sec_hdr(sc, "⚙️", "הגדרות קמפיין")
+        sc = self._card(parent)
+        sc.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        sc_inner = ctk.CTkFrame(sc, fg_color="transparent")
+        sc_inner.pack(fill="x", padx=20, pady=18)
 
-        # Manual confirm — toggle switch
-        row1 = tk.Frame(sc, bg=CARD_W, highlightbackground=BORDER,
-                        highlightthickness=1)
-        row1.pack(fill="x", pady=(0, 8))
-        tk.Label(row1, text="אישור ידני לפני שליחה",
-                 font=(FONT, 10), bg=CARD_W, fg=TEXT,
-                 padx=14, pady=12).pack(side="right")
-        ToggleSwitch(row1, self.manual_confirm_var,
-                     bg=CARD_W).pack(side="left", padx=14, pady=8)
+        self._section_hdr(sc_inner, "⚙️", "הגדרות קמפיין")
 
-        # Delay
-        row2 = tk.Frame(sc, bg=CARD_W, highlightbackground=BORDER,
-                        highlightthickness=1)
-        row2.pack(fill="x")
-        tk.Label(row2, text="שהייה בין הודעות (שניות)",
-                 font=(FONT, 10), bg=CARD_W, fg=MUTED,
-                 padx=14, pady=12).pack(side="right")
-        tk.Label(row2, text="⏱", font=(FONT, 12),
-                 bg=CARD_W, fg=MUTED).pack(side="left", padx=(14, 4))
-        tk.Entry(row2, textvariable=self.delay_var, width=5,
-                 font=(FONT, 13, "bold"), justify="center",
-                 relief="flat", bg=CARD_W, fg=ACCENT, bd=0,
-                 insertbackground=ACCENT).pack(side="left", pady=8)
+        # toggle row
+        tr = ctk.CTkFrame(sc_inner, fg_color=FIELD, corner_radius=12)
+        tr.pack(fill="x", pady=(0, 8))
+        ctk.CTkLabel(tr, text="אישור ידני לפני שליחה",
+                     font=F_BODY, text_color=TEXT,
+                     anchor="e").pack(side="right", padx=16, pady=12)
+        ctk.CTkSwitch(tr, text="",
+                      variable=self.manual_confirm_var,
+                      onvalue=True, offvalue=False,
+                      progress_color=ACCENT,
+                      button_color="white",
+                      button_hover_color="#f0f0f0",
+                      fg_color="#b0bdb5"
+                      ).pack(side="left", padx=16, pady=12)
 
-        # ── Recipients card ───────────────────────────────────────────────────
-        self._nums_badge = tk.StringVar(value="0 מספרים")
-        nc = self._card(parent, row=1, column=0, sticky="nsew")
-        self._sec_hdr(nc, "👥", "רשימת תפוצה", badge_var=self._nums_badge)
+        # delay row
+        dr = ctk.CTkFrame(sc_inner, fg_color=FIELD, corner_radius=12)
+        dr.pack(fill="x")
+        ctk.CTkLabel(dr, text="שהייה בין הודעות (שניות)",
+                     font=F_BODY, text_color=MUTED,
+                     anchor="e").pack(side="right", padx=16, pady=12)
+        ctk.CTkLabel(dr, text="⏱", font=F_BODY,
+                     text_color=MUTED).pack(side="left", padx=(16, 4), pady=12)
+        ctk.CTkEntry(dr, textvariable=self.delay_var, width=60,
+                     font=ctk.CTkFont(family=FONT, size=14, weight="bold"),
+                     justify="center", fg_color=FIELD,
+                     text_color=ACCENT, border_color=ACCENT,
+                     border_width=2, corner_radius=8
+                     ).pack(side="left", pady=12)
 
-        tk.Label(nc, text="מספר לשורה, פסיק או רווח — ישראל: 05X  /  בינ׳: +XX",
-                 font=(FONT, 8), bg=CARD, fg=MUTED, anchor="e"
-                 ).pack(fill="x", pady=(0, 6))
+        # ── Numbers card ─────────────────────────────────────────────────────
+        nc = self._card(parent)
+        nc.grid(row=1, column=0, sticky="nsew")
+        nc_inner = ctk.CTkFrame(nc, fg_color="transparent")
+        nc_inner.pack(fill="both", expand=True, padx=20, pady=18)
+        nc_inner.rowconfigure(1, weight=1)
+        nc_inner.columnconfigure(0, weight=1)
 
-        nw = tk.Frame(nc, bg=FIELD, highlightbackground=BORDER, highlightthickness=1)
-        nw.pack(fill="both", expand=True)
-        nw.rowconfigure(0, weight=1)
-        nw.columnconfigure(0, weight=1)
+        self._section_hdr(nc_inner, "👥", "רשימת תפוצה",
+                          badge_var=self._nums_badge_var)
 
-        ns = tk.Scrollbar(nw, bg=BORDER, troughcolor=FIELD, width=8, relief="flat", bd=0)
-        ns.grid(row=0, column=1, sticky="ns")
+        ctk.CTkLabel(nc_inner,
+                     text="מספר לשורה, פסיק או רווח  |  ישראל: 05X  /  בינ׳: +XX",
+                     font=F_SMALL, text_color=MUTED, anchor="e"
+                     ).pack(fill="x", pady=(0, 6))
 
-        self.numbers_text = tk.Text(
-            nw, font=(FONT, 11), bd=0, relief="flat",
-            bg=FIELD, fg=TEXT, wrap="word", padx=12, pady=10,
-            insertbackground=ACCENT, yscrollcommand=ns.set)
-        self.numbers_text.grid(row=0, column=0, sticky="nsew")
-        ns.config(command=self.numbers_text.yview)
-        self.numbers_text.tag_configure("rtl", justify="right")
+        self.numbers_text = ctk.CTkTextbox(
+            nc_inner, font=F_BODY, fg_color=FIELD,
+            text_color=TEXT, border_color=BORDER, border_width=1,
+            corner_radius=10, wrap="word",
+            scrollbar_button_color=BORDER,
+            scrollbar_button_hover_color=A_LIGHT)
+        self.numbers_text.pack(fill="both", expand=True)
+        self.numbers_text._textbox.tag_configure("rtl", justify="right")
         self._bind_text_widget(self.numbers_text)
-        # live badge update
-        self.numbers_text.bind("<KeyRelease>", lambda e: self._refresh_badge())
-        self.numbers_text.bind("<<Modified>>", lambda e: self._refresh_badge())
+        self.numbers_text._textbox.bind(
+            "<KeyRelease>", lambda e: self._refresh_badge())
 
-        # bottom strip
-        bot = tk.Frame(nc, bg=CARD)
+        # bottom buttons
+        bot = ctk.CTkFrame(nc_inner, fg_color="transparent")
         bot.pack(fill="x", pady=(10, 0))
-        self._btn(bot, "🗑  נקה רשימה", self.clear_numbers,
-                  D_LIGHT, DANGER, "#f5c0bc",
-                  font=(FONT, 9, "bold"), padx=14, pady=6
-                  ).pack(side="right")
-        self._btn(bot, "ספור", self.count_numbers,
-                  A_LIGHT, ACCENT, "#c8e8d8",
-                  font=(FONT, 9, "bold"), padx=14, pady=6
-                  ).pack(side="right", padx=(0, 6))
+
+        self._pill_btn(bot, "🗑  נקה רשימה", self.clear_numbers,
+                       D_LIGHT, DANGER, "#f5c0bc",
+                       font=F_SMALL).pack(side="right")
+        self._pill_btn(bot, "ספור", self.count_numbers,
+                       A_LIGHT, ACCENT, "#b8deca",
+                       font=F_SMALL).pack(side="right", padx=(0, 8))
 
     def _refresh_badge(self):
         n = len(parse_phone_numbers(self.numbers_text.get("1.0", "end")))
-        self._nums_badge.set(f"{n} מספרים")
+        self._nums_badge_var.set(f"{n} מספרים")
 
     # ── Right column ──────────────────────────────────────────────────────────
 
     def _build_right(self, parent):
 
         # ── Message card ─────────────────────────────────────────────────────
-        mc = self._card(parent, row=0, column=0, sticky="nsew", pady=(0, 12))
-        self._sec_hdr(mc, "💬", "תוכן ההודעה")
+        mc = self._card(parent)
+        mc.grid(row=0, column=0, sticky="nsew", pady=(0, 12))
+        mc.rowconfigure(1, weight=1)
+        mc.columnconfigure(0, weight=1)
 
-        mw = tk.Frame(mc, bg=FIELD, highlightbackground=BORDER, highlightthickness=1)
-        mw.pack(fill="both", expand=True)
-        mw.rowconfigure(0, weight=1)
-        mw.columnconfigure(0, weight=1)
+        mc_hdr = ctk.CTkFrame(mc, fg_color="transparent")
+        mc_hdr.grid(row=0, column=0, sticky="ew", padx=20, pady=(18, 0))
+        self._section_hdr(mc_hdr, "💬", "תוכן ההודעה")
 
-        ms = tk.Scrollbar(mw, bg=BORDER, troughcolor=FIELD, width=8, relief="flat", bd=0)
-        ms.grid(row=0, column=1, sticky="ns")
-
-        self.message_text = tk.Text(
-            mw, font=(FONT, 12), bd=0, relief="flat",
-            bg=FIELD, fg=TEXT, wrap="word", padx=14, pady=12,
-            insertbackground=ACCENT, yscrollcommand=ms.set)
-        self.message_text.grid(row=0, column=0, sticky="nsew")
-        ms.config(command=self.message_text.yview)
-        self.message_text.tag_configure("rtl", justify="right")
+        self.message_text = ctk.CTkTextbox(
+            mc, font=F_BODY, fg_color=FIELD,
+            text_color=TEXT, border_color=BORDER, border_width=1,
+            corner_radius=10, wrap="word",
+            scrollbar_button_color=BORDER,
+            scrollbar_button_hover_color=A_LIGHT)
+        self.message_text.grid(row=1, column=0, sticky="nsew", padx=20, pady=8)
+        self.message_text._textbox.tag_configure("rtl", justify="right")
         self._bind_text_widget(self.message_text)
         self.message_text.insert("1.0",
-            "שלום,\nרצינו לעדכן שהשיעור היום בוטל.\nעמכם הסליחה ותודה על ההבנה.", "rtl")
+            "שלום,\nרצינו לעדכן שהשיעור היום בוטל.\nעמכם הסליחה ותודה על ההבנה.")
+        self.message_text._textbox.tag_add("rtl", "1.0", "end")
 
-        # Template pills bar
-        tbar = tk.Frame(mc, bg="#dce8de", pady=10, padx=12)
-        tbar.pack(fill="x")
-        tk.Label(tbar, text="תבניות מהירות ←",
-                 font=(FONT, 8, "bold"), bg="#dce8de", fg=MUTED
-                 ).pack(side="right", padx=(0, 8))
+        # template bar
+        tbar = ctk.CTkFrame(mc, fg_color="#ddeee3", corner_radius=0,
+                            border_width=0)
+        tbar.grid(row=2, column=0, sticky="ew",
+                  padx=0, pady=0)
+        tbar_inner = ctk.CTkFrame(tbar, fg_color="transparent")
+        tbar_inner.pack(fill="x", padx=12, pady=10)
+
+        ctk.CTkLabel(tbar_inner, text="תבניות ←",
+                     font=F_SMALL, text_color=MUTED).pack(side="right", padx=(0, 8))
         for label, cmd in [
             ("📅 ביטול שיעור", self._tpl_cancel),
             ("🕒 דחייה",       self._tpl_delay),
@@ -428,105 +422,106 @@ class WhatsAppApp:
             ("📢 מבצע",        self._tpl_promo),
             ("🗑 נקה",         self.clear_message),
         ]:
-            self._btn(tbar, label, cmd, CARD, MUTED, A_LIGHT,
-                      font=(FONT, 9, "bold"), padx=12, pady=5,
-                      highlightbackground=BORDER, highlightthickness=1
-                      ).pack(side="right", padx=3)
+            self._pill_btn(tbar_inner, label, cmd,
+                           CARD, MUTED, A_LIGHT,
+                           font=F_SMALL,
+                           border_width=1, border_color=BORDER
+                           ).pack(side="right", padx=3)
 
-        # ── Actions row ───────────────────────────────────────────────────────
-        act = tk.Frame(parent, bg=BG)
-        act.grid(row=1, column=0, sticky="ew", pady=(0, 8))
-        act.columnconfigure(0, weight=1)   # CTA stretches
+        # ── CTA button ───────────────────────────────────────────────────────
+        cta_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        cta_frame.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        cta_frame.columnconfigure(0, weight=1)
 
-        # Row 1: big CTA button full width
-        cta_row = tk.Frame(act, bg=BG)
-        cta_row.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        cta_row.columnconfigure(0, weight=1)
+        self.start_button = self._pill_btn(
+            cta_frame, "🚀   התחל שליחה עכשיו", self._start_thread,
+            ACCENT, "white", A_DARK, font=F_CTA, height=52)
+        self.start_button.grid(row=0, column=0, sticky="ew", pady=(0, 8))
 
-        self.start_button = self._btn(
-            cta_row, "🚀   התחל שליחה עכשיו", self._start_thread,
-            ACCENT, "white", A_DARK,
-            font=(FONT, 14, "bold"), pady=15)
-        self.start_button.grid(row=0, column=0, sticky="ew")
-
-        self.stop_button = self._btn(
-            cta_row, "⛔   עצור שליחה", self._stop_sending,
-            DANGER, "white", D_DARK,
-            font=(FONT, 14, "bold"), pady=15)
+        self.stop_button = self._pill_btn(
+            cta_frame, "⛔   עצור שליחה", self._stop_sending,
+            DANGER, "white", D_DARK, font=F_CTA, height=52)
         # hidden until sending
 
-        # Row 2: smaller utility buttons
-        util_row = tk.Frame(act, bg=BG)
-        util_row.grid(row=1, column=0, sticky="ew")
-        util_row.columnconfigure(0, weight=1)
-        util_row.columnconfigure(1, weight=1)
+        util = ctk.CTkFrame(cta_frame, fg_color="transparent")
+        util.grid(row=1, column=0, sticky="ew")
+        util.columnconfigure(0, weight=1)
+        util.columnconfigure(1, weight=1)
 
-        for col, (lbl, cmd) in enumerate([
-            ("✓  בדיקת תקינות",  self.validate_inputs),
-            ("📱  חיבור ראשוני", self._first_login),
-        ]):
-            self._btn(util_row, lbl, cmd, CARD, ACCENT, A_LIGHT,
-                      font=(FONT, 10), pady=10,
-                      highlightbackground=BORDER, highlightthickness=1
-                      ).grid(row=0, column=col, sticky="ew",
-                             padx=(0, 6) if col == 0 else (6, 0))
+        self._pill_btn(util, "✓  בדיקת תקינות", self.validate_inputs,
+                       CARD, ACCENT, A_LIGHT, font=F_SMALL,
+                       border_width=1, border_color=BORDER, height=40
+                       ).grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        self._pill_btn(util, "📱  חיבור ראשוני", self._first_login,
+                       CARD, ACCENT, A_LIGHT, font=F_SMALL,
+                       border_width=1, border_color=BORDER, height=40
+                       ).grid(row=0, column=1, sticky="ew", padx=(6, 0))
 
-        # ── Progress ──────────────────────────────────────────────────────────
-        prog = tk.Frame(parent, bg=BG)
+        # ── Progress ─────────────────────────────────────────────────────────
+        prog = ctk.CTkFrame(parent, fg_color="transparent")
         prog.grid(row=2, column=0, sticky="ew", pady=(0, 8))
-        self._progress_label = tk.Label(prog, text="",
-                                        font=(FONT, 9), bg=BG, fg=MUTED)
-        self._progress_label.pack(anchor="e")
-        style = ttk.Style()
-        style.theme_use("default")
-        style.configure("ws.Horizontal.TProgressbar",
-                        troughcolor=BORDER, background=ACCENT, thickness=6)
-        self._progress_bar = ttk.Progressbar(
+
+        self._progress_label = ctk.CTkLabel(prog, text="",
+                                            font=F_SMALL, text_color=MUTED,
+                                            anchor="e")
+        self._progress_label.pack(fill="x")
+
+        self._progress_bar = ctk.CTkProgressBar(
             prog, variable=self._progress_var,
-            style="ws.Horizontal.TProgressbar", mode="determinate")
+            progress_color=ACCENT, fg_color=BORDER,
+            corner_radius=4, height=6)
+        self._progress_bar.set(0)
         self._progress_bar.pack(fill="x")
 
-        # ── Log terminal ──────────────────────────────────────────────────────
-        log_outer = tk.Frame(parent, bg=LOG_BG, padx=18, pady=14)
-        log_outer.grid(row=3, column=0, sticky="nsew")
-        log_outer.rowconfigure(1, weight=1)
-        log_outer.columnconfigure(1, weight=1)
+        # ── Log terminal ─────────────────────────────────────────────────────
+        log_card = ctk.CTkFrame(parent, fg_color=LOG_BG, corner_radius=16)
+        log_card.grid(row=3, column=0, sticky="nsew")
+        log_card.rowconfigure(1, weight=1)
+        log_card.columnconfigure(1, weight=1)
 
         # title bar
-        log_hdr = tk.Frame(log_outer, bg=LOG_BG)
-        log_hdr.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 10))
-        dots = tk.Frame(log_hdr, bg=LOG_BG)
+        log_hdr = ctk.CTkFrame(log_card, fg_color="transparent")
+        log_hdr.grid(row=0, column=0, columnspan=3, sticky="ew",
+                     padx=18, pady=(14, 8))
+
+        dots = ctk.CTkFrame(log_hdr, fg_color="transparent")
         dots.pack(side="left")
         for col in ("#ff5f57", "#ffbd2e", "#28c940"):
-            tk.Label(dots, text="●", font=(FONT, 9), bg=LOG_BG,
-                     fg=col).pack(side="left", padx=2)
-        tk.Label(log_hdr, text="LIVE LOG  ●",
-                 font=("Consolas", 9, "bold"), bg=LOG_BG,
-                 fg=LOG_OK).pack(side="right")
+            ctk.CTkLabel(dots, text="●", font=ctk.CTkFont(size=11),
+                         text_color=col).pack(side="left", padx=2)
 
-        # two-column log: timestamp | message
-        ts_scroll = tk.Scrollbar(log_outer, width=8, bd=0, relief="flat",
-                                 bg=LOG_BG, troughcolor=LOG_BG)
-        ts_scroll.grid(row=1, column=2, sticky="ns")
+        ctk.CTkLabel(log_hdr, text="LIVE LOG  ●",
+                     font=ctk.CTkFont(family="Consolas", size=9, weight="bold"),
+                     text_color=LOG_OK).pack(side="right")
 
+        # timestamp column
         self._log_ts = tk.Text(
-            log_outer, font=("Consolas", 9), width=10,
-            bg=LOG_BG, fg="#4a6355", bd=0, relief="flat",
-            state="disabled", wrap="none", padx=0, pady=2)
-        self._log_ts.grid(row=1, column=0, sticky="ns")
+            log_card, font=("Consolas", 9), width=10,
+            bg=LOG_BG, fg="#3d5c4a", bd=0, relief="flat",
+            state="disabled", wrap="none", padx=4, pady=2)
+        self._log_ts.grid(row=1, column=0, sticky="ns", padx=(18, 0), pady=(0, 14))
+
+        # separator
+        tk.Frame(log_card, bg="#1e3828", width=1).grid(
+            row=1, column=1, sticky="ns", pady=(0, 14))
+
+        # message column
+        log_scroll = tk.Scrollbar(log_card, bg=LOG_BG, troughcolor=LOG_BG,
+                                  width=8, bd=0, relief="flat")
+        log_scroll.grid(row=1, column=3, sticky="ns", padx=(0, 8), pady=(0, 14))
 
         self.log_text = tk.Text(
-            log_outer, font=("Consolas", 9),
+            log_card, font=("Consolas", 9),
             bg=LOG_BG, fg="#b0c4b8", bd=0, relief="flat",
-            state="disabled", wrap="word", padx=8, pady=2,
-            yscrollcommand=ts_scroll.set)
-        self.log_text.grid(row=1, column=1, sticky="nsew")
-        ts_scroll.config(command=self._sync_scroll)
+            state="disabled", wrap="word", padx=12, pady=2,
+            yscrollcommand=log_scroll.set)
+        self.log_text.grid(row=1, column=2, sticky="nsew", pady=(0, 14))
+        log_scroll.config(command=self._sync_scroll)
 
         for tag, fg in [("success", LOG_OK), ("error", LOG_ERR),
                         ("warning", LOG_WRN), ("info", "#b0c4b8")]:
             self.log_text.tag_configure(tag, foreground=fg)
-            self._log_ts.tag_configure(tag, foreground="#4a6355")
+            self._log_ts.tag_configure(tag, foreground="#3d5c4a")
 
         self._ui_log("המערכת נטענה ומוכנה לעבודה.", "success")
 
@@ -543,8 +538,7 @@ class WhatsAppApp:
         self._log_ts.insert("end", f"{ts}\n", level)
         self.log_text.insert("end", f"{msg}\n", level)
         for w in (self.log_text, self._log_ts):
-            w.see("end")
-            w.config(state="disabled")
+            w.see("end"); w.config(state="disabled")
 
     def log(self, msg: str, level: str = "info"):
         self.root.after(0, lambda m=msg, lv=level: self._ui_log(m, lv))
@@ -560,7 +554,8 @@ class WhatsAppApp:
 
     def _set_message(self, text):
         self.message_text.delete("1.0", "end")
-        self.message_text.insert("1.0", text, "rtl")
+        self.message_text.insert("1.0", text)
+        self.message_text._textbox.tag_add("rtl", "1.0", "end")
 
     def _tpl_cancel(self):
         self._set_message("שלום,\nרצינו לעדכן שהשיעור היום בוטל.\nעמכם הסליחה ותודה על ההבנה.")
@@ -669,7 +664,7 @@ class WhatsAppApp:
         self._stop_event.clear()
         self._is_sending = True
         self.start_button.grid_remove()
-        self.stop_button.grid(row=0, column=0, sticky="ew")
+        self.stop_button.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         threading.Thread(target=self._send_all, args=(driver,), daemon=True).start()
 
     def _stop_sending(self):
@@ -679,14 +674,15 @@ class WhatsAppApp:
     def _restore_ui_after_send(self):
         self._is_sending = False
         self.stop_button.grid_remove()
-        self.start_button.grid(row=0, column=0, sticky="ew")
+        self.start_button.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         self._progress_var.set(0)
-        self._progress_label.config(text="")
-        self._progress_bar.config(maximum=1)
+        self._progress_bar.set(0)
+        self._progress_label.configure(text="")
 
     def _update_progress(self, current: int, total: int, phone: str):
-        self._progress_var.set(current)
-        self._progress_label.config(text=f"שולח {current}/{total}  |  {phone}")
+        self._progress_var.set(current / total if total else 0)
+        self._progress_bar.set(current / total if total else 0)
+        self._progress_label.configure(text=f"שולח {current}/{total}  |  {phone}")
 
     def _send_all(self, driver):
         numbers = self._get_numbers()
@@ -694,13 +690,13 @@ class WhatsAppApp:
         delay   = max(MIN_DELAY, float(self.delay_var.get()))
         total   = len(numbers)
         sent_ok, sent_fail = [], []
-        self.root.after(0, lambda: self._progress_bar.config(maximum=total))
 
         try:
             self.log("טוען WhatsApp Web...")
             driver.get("https://web.whatsapp.com")
             WebDriverWait(driver, 60).until(
-                EC.presence_of_element_located((By.XPATH, '//div[@id="side"] | //canvas')))
+                EC.presence_of_element_located((By.XPATH,
+                    '//div[@id="side"] | //canvas')))
 
             if not driver.find_elements(By.ID, "side"):
                 self.log("⚠️ לא מחובר! נדרשת סריקת QR.", "error")
@@ -807,6 +803,6 @@ class WhatsAppApp:
 # ── Entry Point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    root = tk.Tk()
+    root = ctk.CTk()
     app  = WhatsAppApp(root)
     root.mainloop()
