@@ -7,46 +7,75 @@ echo   WhatsApp Studio Notifier — Build
 echo  ====================================
 echo.
 
-:: Install / update dependencies
-echo  [1/3] Installing dependencies...
-python -m pip install -r requirements.txt -q
-if errorlevel 1 (
-    echo  [ERROR] pip install failed. Is Python installed and in PATH?
-    pause
-    exit /b 1
-)
+:: ── Find Python ────────────────────────────────────────────────────────────
+set PYTHON=
 
-:: Make sure logo_icon.ico exists (create from png if missing)
-if not exist "logo_icon.ico" (
-    echo  [INFO] logo_icon.ico missing — generating from logo_icon.png...
-    python -c "from PIL import Image; img=Image.open('logo_icon.png').convert('RGBA'); img.save('logo_icon.ico', format='ICO', sizes=[(16,16),(32,32),(48,48),(64,64),(256,256)]); print('  logo_icon.ico created.')"
-    if errorlevel 1 (
-        echo  [ERROR] Could not create logo_icon.ico
-        pause
-        exit /b 1
+:: Try common commands first
+python --version >nul 2>&1 && set PYTHON=python
+if "%PYTHON%"=="" py --version >nul 2>&1 && set PYTHON=py
+
+:: Search common install locations
+if "%PYTHON%"=="" (
+    for %%P in (
+        "%LOCALAPPDATA%\Programs\Python\Python313\python.exe"
+        "%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
+        "%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
+        "%LOCALAPPDATA%\Programs\Python\Python310\python.exe"
+        "C:\Python313\python.exe"
+        "C:\Python312\python.exe"
+        "C:\Python311\python.exe"
+        "C:\Python310\python.exe"
+    ) do (
+        if exist %%P (
+            set PYTHON=%%P
+            goto :found_python
+        )
     )
 )
 
-:: Build
-echo.
-echo  [2/3] Building exe...
-python -m PyInstaller SendMessage.spec --noconfirm
-if errorlevel 1 (
+:found_python
+if "%PYTHON%"=="" (
+    echo  [ERROR] Python not found!
     echo.
-    echo  [ERROR] PyInstaller build failed — see errors above.
+    echo  Please install Python from https://www.python.org/downloads/
+    echo  Make sure to check "Add Python to PATH" during installation.
+    echo.
     pause
     exit /b 1
 )
 
-:: Copy to Desktop
+echo  [OK] Using Python: %PYTHON%
 echo.
-echo  [3/3] Copying to Desktop...
-copy /Y "dist\WhatsApp_Notifier.exe" "%USERPROFILE%\Desktop\WhatsApp_Notifier.exe" >nul
+
+:: ── Install dependencies ───────────────────────────────────────────────────
+echo  [1/3] Installing dependencies...
+%PYTHON% -m pip install -r requirements.txt -q
 if errorlevel 1 (
-    echo  [ERROR] Could not copy to Desktop.
+    echo  [ERROR] pip install failed.
     pause
     exit /b 1
 )
+
+:: ── Make sure logo_icon.ico exists ─────────────────────────────────────────
+if not exist "logo_icon.ico" (
+    echo  [INFO] Generating logo_icon.ico...
+    %PYTHON% -c "from PIL import Image; img=Image.open('logo_icon.png').convert('RGBA'); img.save('logo_icon.ico', format='ICO', sizes=[(16,16),(32,32),(48,48),(64,64),(256,256)])"
+)
+
+:: ── Build ──────────────────────────────────────────────────────────────────
+echo  [2/3] Building exe...
+%PYTHON% -m PyInstaller SendMessage.spec --noconfirm
+if errorlevel 1 (
+    echo.
+    echo  [ERROR] Build failed — see errors above.
+    pause
+    exit /b 1
+)
+
+:: ── Copy to Desktop ────────────────────────────────────────────────────────
+echo.
+echo  [3/3] Copying to Desktop...
+copy /Y "dist\WhatsApp_Notifier.exe" "%USERPROFILE%\Desktop\WhatsApp_Notifier.exe" >nul
 
 echo.
 echo  ====================================
