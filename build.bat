@@ -132,24 +132,30 @@ if not exist "dist\WhatsApp_Notifier.exe" (
 echo.
 echo  Copying to Desktop...
 
-:: Find the real Desktop folder (OneDrive relocates it on many machines)
-set "DESKTOP="
-for /f "usebackq tokens=3*" %%A in (`reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v Desktop 2^>nul`) do set "DESKTOP=%%A %%B"
-call set "DESKTOP=%DESKTOP%"
+:: Try common Desktop locations in order. First one that exists wins.
+set "DESKTOP=%USERPROFILE%\Desktop"
+if not exist "%DESKTOP%" if defined OneDrive set "DESKTOP=%OneDrive%\Desktop"
+if not exist "%DESKTOP%" if defined OneDriveConsumer set "DESKTOP=%OneDriveConsumer%\Desktop"
+if not exist "%DESKTOP%" if defined OneDriveCommercial set "DESKTOP=%OneDriveCommercial%\Desktop"
 
-if not defined DESKTOP set "DESKTOP=%USERPROFILE%\Desktop"
-if not exist "%DESKTOP%" set "DESKTOP=%USERPROFILE%\Desktop"
+if not exist "%DESKTOP%" goto :no_desktop
 
-if exist "%DESKTOP%" (
-    copy /Y "dist\WhatsApp_Notifier.exe" "%DESKTOP%\WhatsApp_Notifier.exe" >nul
-    if errorlevel 1 (
-        echo  [WARN] Could not copy to %DESKTOP% (file in use?). Close the app and re-run.
-    ) else (
-        echo  [OK] Desktop: %DESKTOP%\WhatsApp_Notifier.exe
-    )
-) else (
-    echo  [WARN] Desktop folder not found. Exe is at: %CD%\dist\WhatsApp_Notifier.exe
-)
+copy /Y "dist\WhatsApp_Notifier.exe" "%DESKTOP%\WhatsApp_Notifier.exe" >nul
+if errorlevel 1 goto :copy_failed
+echo  [OK] Desktop: %DESKTOP%\WhatsApp_Notifier.exe
+goto :after_copy
+
+:no_desktop
+echo  [WARN] Desktop folder not found. The exe is ready at:
+echo         %CD%\dist\WhatsApp_Notifier.exe
+goto :after_copy
+
+:copy_failed
+echo  [WARN] Could not copy to Desktop — file may be in use.
+echo         Close the app and re-run this script.
+goto :after_copy
+
+:after_copy
 
 :: ── Nudge Windows to refresh the icon cache ────────────────────────────────
 echo.
