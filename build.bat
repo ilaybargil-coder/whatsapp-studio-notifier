@@ -2,25 +2,47 @@
 title WhatsApp Notifier - Build
 setlocal enabledelayedexpansion
 
+:: ── Always run from the script's own directory, no matter how it was launched
+cd /d "%~dp0"
+
 echo.
 echo  ====================================
 echo   WhatsApp Studio Notifier - Build
 echo  ====================================
+echo  Working dir: %CD%
 echo.
+
+:: ── Sanity check: make sure we're actually in the project ─────────────────
+if not exist "SendMessage.py" (
+    echo  [ERROR] SendMessage.py not found in %CD%
+    echo         This script must sit next to SendMessage.py.
+    echo.
+    pause
+    exit /b 1
+)
+if not exist "SendMessage.spec" (
+    echo  [ERROR] SendMessage.spec not found in %CD%
+    echo.
+    pause
+    exit /b 1
+)
 
 :: ── Pull latest from git ───────────────────────────────────────────────────
 where git >nul 2>&1
 if errorlevel 1 (
     echo  [WARN] git not found — skipping auto-update.
 ) else (
-    echo  [1/5] Pulling latest from git...
-    git pull --ff-only
-    if errorlevel 1 (
-        echo.
-        echo  [WARN] git pull failed. Continuing with local code.
-        echo         If the build is missing recent fixes, run: git pull
-        echo.
-        timeout /t 3 >nul
+    if exist ".git" (
+        echo  [1/5] Pulling latest from git...
+        git pull --ff-only
+        if errorlevel 1 (
+            echo.
+            echo  [WARN] git pull failed. Continuing with local code.
+            echo         If the build is missing recent fixes, run: git pull
+            echo.
+        )
+    ) else (
+        echo  [WARN] Not a git repo — skipping auto-update.
     )
 )
 echo.
@@ -99,14 +121,34 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: ── Copy to Desktop ────────────────────────────────────────────────────────
+:: ── Verify the exe was built ───────────────────────────────────────────────
+if not exist "dist\WhatsApp_Notifier.exe" (
+    echo  [ERROR] Build finished but dist\WhatsApp_Notifier.exe is missing.
+    pause
+    exit /b 1
+)
+
+:: ── Copy to Desktop (handles OneDrive-redirected Desktop) ─────────────────
 echo.
 echo  Copying to Desktop...
-copy /Y "dist\WhatsApp_Notifier.exe" "%USERPROFILE%\Desktop\WhatsApp_Notifier.exe" >nul
-if errorlevel 1 (
-    echo  [WARN] Could not copy to Desktop (file in use?). Close the app and re-run.
+
+:: Find the real Desktop folder (OneDrive relocates it on many machines)
+set "DESKTOP="
+for /f "usebackq tokens=3*" %%A in (`reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v Desktop 2^>nul`) do set "DESKTOP=%%A %%B"
+call set "DESKTOP=%DESKTOP%"
+
+if not defined DESKTOP set "DESKTOP=%USERPROFILE%\Desktop"
+if not exist "%DESKTOP%" set "DESKTOP=%USERPROFILE%\Desktop"
+
+if exist "%DESKTOP%" (
+    copy /Y "dist\WhatsApp_Notifier.exe" "%DESKTOP%\WhatsApp_Notifier.exe" >nul
+    if errorlevel 1 (
+        echo  [WARN] Could not copy to %DESKTOP% (file in use?). Close the app and re-run.
+    ) else (
+        echo  [OK] Desktop: %DESKTOP%\WhatsApp_Notifier.exe
+    )
 ) else (
-    echo  [OK] Desktop shortcut updated.
+    echo  [WARN] Desktop folder not found. Exe is at: %CD%\dist\WhatsApp_Notifier.exe
 )
 
 :: ── Nudge Windows to refresh the icon cache ────────────────────────────────
