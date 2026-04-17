@@ -42,8 +42,17 @@ else:
 MIN_DELAY    = 1.5
 SEND_TIMEOUT = 25
 
-# Physical key codes — same regardless of keyboard language (Hebrew/English)
-_KC_V, _KC_C, _KC_X, _KC_A = 86, 67, 88, 65
+# Physical key codes — hardware position, same regardless of keyboard language (Hebrew/English)
+# Windows/Linux: Virtual-Key codes match ASCII uppercase letters
+# macOS:         Cocoa key codes are completely different
+if platform.system() == "Darwin":
+    _KC_V, _KC_C, _KC_X, _KC_A = 9, 8, 7, 0
+else:
+    _KC_V, _KC_C, _KC_X, _KC_A = 86, 67, 88, 65
+
+# Modifier state bits in Tkinter event.state
+_MOD_CTRL = 0x4                                          # Ctrl on all platforms
+_MOD_CMD  = 0x8 if platform.system() == "Darwin" else 0 # Command (⌘) on Mac only
 
 # ── Design Tokens ─────────────────────────────────────────────────────────────
 BG       = "#eef2ee"
@@ -149,12 +158,48 @@ class WhatsAppApp:
         """RTL display fix + full clipboard shortcuts on a CTkTextbox."""
         w = ctk_box._textbox   # underlying tk.Text
 
+        # ── RTL / BiDi helpers ────────────────────────────────────────────────
+
         def _rtl(*_):
             w.tag_add("rtl", "1.0", "end")
 
-        w.bind("<Key>",           lambda e: w.after(1, _rtl))
+        _bidi_busy = [False]   # guard against re-entrant calls
+
+        def _force_bidi_render():
+            """
+            Fix: Hebrew chars display scrambled (e.g. שלום → וםשל) until Space
+            is pressed.  Tk only re-runs its BiDi pass at word boundaries, so
+            we force a full layout by saving, clearing and re-inserting the
+            text, then restoring the cursor.  O(n) per keystroke but imperceptible
+            for typical message lengths (<500 chars).
+            """
+            if _bidi_busy[0]:
+                return
+            _bidi_busy[0] = True
+            try:
+                saved = w.index(tk.INSERT)
+                content = w.get("1.0", "end-1c")
+                w.delete("1.0", "end")
+                w.insert("1.0", content)
+                w.tag_add("rtl", "1.0", "end")
+                try:
+                    w.mark_set(tk.INSERT, saved)
+                except tk.TclError:
+                    pass
+            finally:
+                _bidi_busy[0] = False
+
+        def _on_key(e):
+            """After each key: re-tag RTL; for Hebrew chars also force BiDi re-render."""
+            w.after(1, _rtl)
+            if e.char and len(e.char) == 1 and 0x0590 <= ord(e.char) <= 0x05FF:
+                w.after(2, _force_bidi_render)
+
+        w.bind("<Key>",           _on_key)
         w.bind("<<Modified>>",    lambda e: _rtl())
         w.bind("<ButtonRelease>", lambda e: _rtl())
+
+        # ── Clipboard helpers ─────────────────────────────────────────────────
 
         def _paste(e=None):
             try:    txt = w.clipboard_get()
@@ -163,6 +208,7 @@ class WhatsAppApp:
             except tk.TclError: pass
             w.insert(tk.INSERT, txt)
             w.after(1, _rtl)
+            w.after(2, _force_bidi_render)
             return "break"
 
         def _copy(e=None):
@@ -185,15 +231,24 @@ class WhatsAppApp:
             w.mark_set(tk.INSERT, "end-1c")
             return "break"
 
-        # Physical keycode handler — works in Hebrew AND English keyboard
+        # ── Physical-keycode handler ──────────────────────────────────────────
+        # Works in Hebrew AND English keyboard mode:
+        #   • Windows: keycode stays 86/67/88/65 regardless of layout
+        #   • macOS:   keycode stays 9/8/7/0; also catches ⌘ via <Meta-Key>
+
         def _ctrl_key(e):
-            if not (e.state & 0x4): return
+            mod = e.state
+            if not ((mod & _MOD_CTRL) or (mod & _MOD_CMD)):
+                return
             if   e.keycode == _KC_V: return _paste()
             elif e.keycode == _KC_C: return _copy()
             elif e.keycode == _KC_X: return _cut()
             elif e.keycode == _KC_A: return _selall()
 
         w.bind("<Control-Key>", _ctrl_key)
+        if platform.system() == "Darwin":
+            w.bind("<Meta-Key>", _ctrl_key)   # ⌘ key on macOS
+
         for s in ("<Control-v>","<Control-V>","<Command-v>","<Command-V>","<<Paste>>"):
             w.bind(s, _paste)
         for s in ("<Control-c>","<Control-C>","<Command-c>","<Command-C>","<<Copy>>"):
