@@ -128,31 +128,35 @@ if not exist "dist\WhatsApp_Notifier.exe" (
     exit /b 1
 )
 
-:: ── Copy to Desktop (handles OneDrive-redirected Desktop) ─────────────────
+:: ── Copy to Desktop ────────────────────────────────────────────────────────
 echo.
 echo  Copying to Desktop...
+set "DESKTOP="
+set "COPY_STATUS="
 
-:: Try common Desktop locations in order. First one that exists wins.
-set "DESKTOP=%USERPROFILE%\Desktop"
-if not exist "%DESKTOP%" if defined OneDrive set "DESKTOP=%OneDrive%\Desktop"
-if not exist "%DESKTOP%" if defined OneDriveConsumer set "DESKTOP=%OneDriveConsumer%\Desktop"
-if not exist "%DESKTOP%" if defined OneDriveCommercial set "DESKTOP=%OneDriveCommercial%\Desktop"
+:: Ask Windows for the real Desktop path (handles OneDrive and redirected folders)
+for /f "usebackq delims=" %%D in (`powershell -NoProfile -Command "[Environment]::GetFolderPath('Desktop')"`) do set "DESKTOP=%%D"
 
+if not defined DESKTOP goto :no_desktop
 if not exist "%DESKTOP%" goto :no_desktop
 
 copy /Y "dist\WhatsApp_Notifier.exe" "%DESKTOP%\WhatsApp_Notifier.exe" >nul
 if errorlevel 1 goto :copy_failed
+set "COPY_STATUS=success"
 echo  [OK] Desktop: %DESKTOP%\WhatsApp_Notifier.exe
 goto :after_copy
 
 :no_desktop
-echo  [WARN] Desktop folder not found. The exe is ready at:
-echo         %CD%\dist\WhatsApp_Notifier.exe
+set "COPY_STATUS=no_desktop"
+echo  [WARN] Desktop folder not found via Windows API.
+echo         EXE is ready at: %CD%\dist\WhatsApp_Notifier.exe
 goto :after_copy
 
 :copy_failed
-echo  [WARN] Could not copy to Desktop — file may be in use.
-echo         Close the app and re-run this script.
+set "COPY_STATUS=copy_failed"
+echo  [WARN] Could not copy to Desktop.
+echo         Make sure WhatsApp_Notifier.exe is closed and try again.
+echo         EXE is ready at: %CD%\dist\WhatsApp_Notifier.exe
 goto :after_copy
 
 :after_copy
@@ -164,10 +168,13 @@ ie4uinit.exe -show >nul 2>&1
 
 echo.
 echo  ====================================
-echo   Done! Updated on Desktop.
+echo   Build completed.
 echo  ====================================
+echo  Built EXE: %CD%\dist\WhatsApp_Notifier.exe
+if /I "%COPY_STATUS%"=="success" echo  Desktop EXE: %DESKTOP%\WhatsApp_Notifier.exe
+if /I not "%COPY_STATUS%"=="success" echo  Desktop copy was not completed.
 echo.
-echo  Tip: If Desktop still shows the old icon, right-click it -^> Delete,
-echo       then re-run this script. Or log out / log in once.
+echo  Tip: If Desktop still shows the old icon, delete the old shortcut/file,
+echo       then run this script again. Logging out and back in can also help.
 echo.
 pause
