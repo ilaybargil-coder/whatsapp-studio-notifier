@@ -54,6 +54,16 @@ else:
 _MOD_CTRL = 0x4                                          # Ctrl on all platforms
 _MOD_CMD  = 0x8 if platform.system() == "Darwin" else 0 # Command (⌘) on Mac only
 
+# Hebrew keysym fallbacks — standard Windows Hebrew keyboard layout.
+# When the keyboard is in Hebrew mode, Tkinter sees the Hebrew letter's keysym
+# instead of the Latin letter's.  We check BOTH so shortcuts work in any mode.
+# Layout: V=ה  C=ב  X=ס  A=ש  Z=ז
+_KS_PASTE  = {'v', 'hebrew_he'}
+_KS_COPY   = {'c', 'hebrew_bet'}
+_KS_CUT    = {'x', 'hebrew_samekh', 'hebrew_samech'}  # two common spellings
+_KS_SELALL = {'a', 'hebrew_shin'}
+_KS_UNDO   = {'z', 'hebrew_zayin'}
+
 # ── Design Tokens ─────────────────────────────────────────────────────────────
 BG       = "#eef2ee"
 CARD     = "#ffffff"
@@ -228,22 +238,29 @@ class WhatsAppApp:
             except tk.TclError: pass
             return "break"
 
-        # ── Unified <Key> handler — THE fix for Hebrew keyboard on Windows ────
+        # ── Unified <Key> handler — triple-layer Hebrew keyboard fix ─────────
         #
-        # On Windows with Hebrew keyboard active, <Control-Key> events are
-        # sometimes swallowed by the OS keyboard driver before Tkinter sees them.
-        # Binding to plain <Key> is guaranteed to fire for every single keypress.
-        # We check e.state (Ctrl/⌘ modifier) and e.keycode (hardware position,
-        # layout-independent) ourselves, so it works in both Hebrew and English.
+        # Three independent checks catch Ctrl shortcuts regardless of keyboard
+        # language.  Any one of them is sufficient; all three together are
+        # bulletproof:
+        #
+        #   1. e.keycode — physical hardware position (layout-independent VK code).
+        #      Works on most Windows configs.
+        #   2. e.keysym  — Hebrew letter name ('hebrew_he' for the V key, etc.).
+        #      Works when Windows reports the Hebrew keysym instead of the VK.
+        #   3. Explicit <Control-hebrew_*> bindings below — fires even if
+        #      <Key> somehow misses Ctrl+Hebrew combos.
 
         def _on_key(e):
             mod = e.state
             if (mod & _MOD_CTRL) or (mod & _MOD_CMD):
-                if   e.keycode == _KC_V: return _paste()
-                elif e.keycode == _KC_C: return _copy()
-                elif e.keycode == _KC_X: return _cut()
-                elif e.keycode == _KC_A: return _selall()
-                elif e.keycode == _KC_Z: return _undo()
+                ks = (e.keysym or "").lower()
+                kc = e.keycode
+                if kc == _KC_V or ks in _KS_PASTE:  return _paste()
+                if kc == _KC_C or ks in _KS_COPY:   return _copy()
+                if kc == _KC_X or ks in _KS_CUT:    return _cut()
+                if kc == _KC_A or ks in _KS_SELALL: return _selall()
+                if kc == _KC_Z or ks in _KS_UNDO:   return _undo()
                 # Any other Ctrl+key (arrows, Home, Del…): let Tk handle it
                 return
             # Normal character: re-apply RTL tag; for Hebrew force BiDi re-render
@@ -256,6 +273,7 @@ class WhatsAppApp:
         w.bind("<ButtonRelease>", lambda e: _rtl())
 
         # Belt-and-suspenders: explicit keysym bindings for English mode
+        # English keysym bindings
         for s in ("<Control-v>","<Control-V>","<Command-v>","<Command-V>","<<Paste>>"):
             w.bind(s, _paste)
         for s in ("<Control-c>","<Control-C>","<Command-c>","<Command-C>","<<Copy>>"):
@@ -265,6 +283,18 @@ class WhatsAppApp:
         for s in ("<Control-a>","<Control-A>","<Command-a>","<Command-A>"):
             w.bind(s, _selall)
         for s in ("<Control-z>","<Control-Z>","<Command-z>","<Command-Z>"):
+            w.bind(s, _undo)
+        # Hebrew keysym bindings — Windows Hebrew keyboard layout
+        # (V=ה  C=ב  X=ס  A=ש  Z=ז)
+        for s in ("<Control-hebrew_he>",):
+            w.bind(s, _paste)
+        for s in ("<Control-hebrew_bet>",):
+            w.bind(s, _copy)
+        for s in ("<Control-hebrew_samekh>", "<Control-hebrew_samech>"):
+            w.bind(s, _cut)
+        for s in ("<Control-hebrew_shin>",):
+            w.bind(s, _selall)
+        for s in ("<Control-hebrew_zayin>",):
             w.bind(s, _undo)
 
     # ── UI helpers ────────────────────────────────────────────────────────────
